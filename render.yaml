@@ -1,0 +1,23 @@
+# Render blueprint. In Render: New > Blueprint, point it at this repo.
+# SIZER_PASSWORD is deliberately not set here; set it in the dashboard so the
+# class password never lands in git.
+services:
+  - type: web
+    name: tmia-longhorn-sizer
+    runtime: python
+    plan: starter          # free spins down after 15 min and takes ~1 min to wake
+    region: ohio
+    buildCommand: pip install -r requirements.txt
+    startCommand: gunicorn app:app --bind 0.0.0.0:$PORT --workers 2 --timeout 60
+    healthCheckPath: /healthz
+    envVars:
+      - key: PYTHON_VERSION
+        value: "3.12.6"
+      - key: SIZER_USERNAME
+        value: longhorn
+      - key: SIZER_PASSWORD
+        sync: false        # set this in the Render dashboard, not in git
+      - key: SIZER_BENCHMARK
+        value: SPY
+      - key: SIZER_DEFAULT_FUND_VALUE
+        sync: false        # optional; leave unset to make students type it

@@ -1,0 +1,265 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Longhorn Fund Position Sizer</title>
+<link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+<main>
+
+  <header>
+    <h1>Longhorn Fund Position Sizer</h1>
+    <p class="sub">
+      Single-name equity. Every size in this fund is expressed as standalone
+      active risk in basis points, not as a dollar amount or a percent of the
+      fund.
+    </p>
+  </header>
+
+  <form method="get" action="/">
+    <input type="hidden" name="manual" value="{{ '1' if manual else '' }}">
+
+    <section class="panel">
+      <h2>Security and window</h2>
+      <div class="grid">
+        {% if not manual %}
+        <label>Ticker
+          <input name="ticker" value="{{ form.ticker }}" required
+                 autocapitalize="characters" autocomplete="off"
+                 placeholder="e.g. NVDA">
+          <small>Benchmark is {{ benchmark }}.</small>
+        </label>
+        {% endif %}
+        <label>Lookback (trading days)
+          <input name="lookback" value="{{ form.lookback }}" inputmode="numeric">
+          <small>126 holds two earnings prints; 63 holds one.</small>
+        </label>
+      </div>
+    </section>
+
+    {% if manual %}
+    <section class="panel">
+      <h2>Risk inputs, entered by hand</h2>
+      <div class="grid">
+        <label>Security volatility (% annual)
+          <input name="vol_security" value="{{ form.vol_security }}" required
+                 inputmode="decimal" placeholder="47.4">
+        </label>
+        <label>Benchmark volatility (% annual)
+          <input name="vol_benchmark" value="{{ form.vol_benchmark }}" required
+                 inputmode="decimal" placeholder="14.0">
+        </label>
+        <label>Correlation
+          <input name="corr" value="{{ form.corr }}" required
+                 inputmode="decimal" placeholder="0.26">
+        </label>
+        <label>Last price ($), optional
+          <input name="last_price" value="{{ request.args.get('last_price','') }}"
+                 inputmode="decimal">
+          <small>Leave blank to skip share counts.</small>
+        </label>
+      </div>
+    </section>
+    {% endif %}
+
+    <section class="panel">
+      <h2>Where this position stands today</h2>
+      <div class="grid">
+        <label>Current portfolio weight (%)
+          <input name="portfolio_weight" value="{{ form.portfolio_weight }}"
+                 required inputmode="decimal" placeholder="0.33">
+          <small>Zero if the name is not held.</small>
+        </label>
+        <label>Benchmark weight (%)
+          <input name="benchmark_weight" value="{{ form.benchmark_weight }}"
+                 inputmode="decimal" placeholder="0">
+          <small>Zero if the name is not in the {{ benchmark }}.</small>
+        </label>
+        <label>Fund value ($)
+          <input name="fund_value" value="{{ form.fund_value }}" required
+                 inputmode="decimal" placeholder="14000000">
+        </label>
+        <label>Proposed incremental weight (%)
+          <input name="incremental_weight" value="{{ form.incremental_weight }}"
+                 inputmode="decimal" placeholder="0.30">
+          <small>Positive to add, negative to trim. Leave blank to just read the ladder.</small>
+        </label>
+      </div>
+    </section>
+
+    <div class="actions">
+      <button type="submit">Size it</button>
+      {% if manual %}
+        <a class="link" href="/">Use the price feed instead</a>
+      {% else %}
+        <a class="link" href="/?manual=1&amp;lookback={{ form.lookback }}">Feed down? Enter risk by hand</a>
+      {% endif %}
+    </div>
+  </form>
+
+  {% if error %}
+    <div class="error"><strong>Cannot size this.</strong> {{ error }}</div>
+  {% endif %}
+
+  {% if result %}
+  {% set r = result %}
+
+  {% if feed and feed.stale %}
+    <div class="warn">
+      Yahoo did not answer, so these prices are from {{ feed.as_of }} rather than
+      today. The volatility estimate is a day old. Say so if you use it in a
+      proposal.
+    </div>
+  {% endif %}
+
+  <section class="panel result">
+    <h2>Risk inputs</h2>
+    <table class="kv">
+      <tr><td>Volatility, security</td><td class="num">{{ r.vol_security|pct(1) }}</td></tr>
+      <tr><td>Volatility, benchmark</td><td class="num">{{ r.vol_benchmark|pct(1) }}</td></tr>
+      <tr><td>Correlation</td><td class="num">{{ '%.2f'|format(r.corr) }}</td></tr>
+      <tr><td>Beta</td><td class="num">{{ '%.2f'|format(r.beta) }}</td></tr>
+      <tr class="strong"><td>Active volatility</td><td class="num">{{ r.active_vol|pct(1) }}</td></tr>
+    </table>
+    <p class="note">
+      Active volatility = SQRT(vol_sec&sup2; + vol_bmk&sup2; &minus; 2 &times; corr
+      &times; vol_sec &times; vol_bmk). It is the only conversion here:
+      active risk = active weight &times; active volatility.
+      {% if feed %}
+        Prices through {{ feed.last_date }}, {{ r.observations }} daily returns.
+      {% endif %}
+    </p>
+  </section>
+
+  <section class="panel result">
+    <h2>Where this position stands today</h2>
+    <table class="kv">
+      <tr><td>Current active weight</td><td class="num">{{ r.current_active_weight|pct }}</td></tr>
+      <tr class="strong headline"><td>Current active risk (bps)</td><td class="num">{{ r.current_risk_bps|bps }}</td></tr>
+      <tr><td>Tier this position already uses</td>
+          <td class="num">
+            {% if r.current_tier %}{{ r.current_tier }}
+            {% elif r.current_risk_bps > 0 %}<span class="bad">Above High</span>
+            {% else %}No active position{% endif %}
+          </td></tr>
+      <tr><td>Room left inside that tier (bps)</td><td class="num">{{ r.room_bps|bps }}</td></tr>
+    </table>
+  </section>
+
+  <section class="panel result">
+    <h2>Conviction breakpoints: what it takes to move tiers</h2>
+    <div class="scroll">
+    <table class="ladder">
+      <thead>
+        <tr><th></th>{% for g in r.ladder %}<th>{{ g.tier }}</th>{% endfor %}</tr>
+      </thead>
+      <tbody>
+        <tr><td>Risk ceiling (bps)</td>
+            {% for g in r.ladder %}<td class="num">{{ g.ceiling_bps|round|int }}</td>{% endfor %}</tr>
+        <tr><td>Pathway boxes required</td>
+            {% for g in r.ladder %}<td class="num">{{ g.boxes }}</td>{% endfor %}</tr>
+        <tr><td>YES votes at that size</td>
+            {% for g in r.ladder %}<td class="num">{{ g.votes }}</td>{% endfor %}</tr>
+        <tr><td>Active weight at that ceiling</td>
+            {% for g in r.ladder %}<td class="num">{{ g.ceiling_active_weight|pct }}</td>{% endfor %}</tr>
+        <tr><td>Portfolio weight at that ceiling</td>
+            {% for g in r.ladder %}<td class="num">{{ g.ceiling_portfolio_weight|pct }}</td>{% endfor %}</tr>
+        <tr class="strong headline">
+            <td>Add / (trim) to get there</td>
+            {% for g in r.ladder %}<td class="num">{{ g.trade_weight|signed_pct }}</td>{% endfor %}</tr>
+        <tr><td class="indent">in dollars</td>
+            {% for g in r.ladder %}<td class="num">{{ g.trade_value|money }}</td>{% endfor %}</tr>
+        <tr><td class="indent">in shares</td>
+            {% for g in r.ladder %}
+              <td class="num">{% if r.last_price %}{{ g.trade_shares|shares }}{% else %}&mdash;{% endif %}</td>
+            {% endfor %}</tr>
+        <tr class="apply"><td></td>
+            {% for g in r.ladder %}
+              <td class="num">
+                <a class="link" href="/?ticker={{ form.ticker }}&amp;lookback={{ form.lookback }}&amp;portfolio_weight={{ form.portfolio_weight }}&amp;benchmark_weight={{ form.benchmark_weight }}&amp;fund_value={{ form.fund_value }}&amp;incremental_weight={{ '%.4f'|format(g.trade_weight * 100) }}&amp;manual={{ '1' if manual else '' }}{% if manual %}&amp;vol_security={{ form.vol_security }}&amp;vol_benchmark={{ form.vol_benchmark }}&amp;corr={{ form.corr }}&amp;last_price={{ request.args.get('last_price','') }}{% endif %}">size to {{ g.tier }}</a>
+              </td>
+            {% endfor %}</tr>
+      </tbody>
+    </table>
+    </div>
+    <p class="note">
+      The bold row is the answer to &ldquo;how much do I ask for.&rdquo; Positive
+      means buy that much of the fund to reach the ceiling; in parentheses means
+      trim that much to fall back to it.
+      {% set capped = r.ladder|selectattr('capped_by')|list %}
+      {% if capped %}
+        {% if capped|selectattr('capped_by','equalto','mandate')|list %}
+          One or more ceilings are capped at 3.00% active weight by the
+          single-stock mandate limit.
+        {% endif %}
+        {% if capped|selectattr('capped_by','equalto','close-out')|list %}
+          On the underweight side the largest possible position is a full
+          close-out, so two tiers can show the same number.
+        {% endif %}
+      {% endif %}
+    </p>
+  </section>
+
+  {% if r.incremental_weight %}
+  <section class="panel result">
+    <h2>The trade you are proposing</h2>
+    <table class="kv">
+      <tr><td>Incremental active weight</td><td class="num">{{ r.incremental_weight|signed_pct }}</td></tr>
+      <tr><td>New portfolio weight</td><td class="num">{{ r.new_portfolio_weight|pct }}</td></tr>
+      <tr><td>New active weight</td><td class="num">{{ r.new_active_weight|pct }}</td></tr>
+      <tr class="strong headline"><td>Position active risk after the trade (bps)</td>
+          <td class="num">{{ r.new_risk_bps|bps }}</td></tr>
+      <tr><td>Standalone risk added / (removed) (bps)</td>
+          <td class="num">{{ r.delta_risk_bps|signed_bps }}</td></tr>
+      <tr class="strong headline"><td>Tier this proposal requires</td>
+          <td class="num">
+            {% if r.required_tier and r.is_reduction %}
+              Reduction, {{ r.required_tier|lower }} magnitude
+            {% elif r.required_tier %}
+              {{ r.required_tier }}
+            {% else %}
+              <span class="bad">Exceeds High, not permitted</span>
+            {% endif %}
+          </td></tr>
+      <tr><td>YES votes required</td>
+          <td class="num">{% if r.required_votes %}{{ r.required_votes }}{% else %}&mdash;{% endif %}</td></tr>
+      <tr><td>Within the 3.00% single-stock cap?</td>
+          <td class="num">{% if r.within_cap %}OK{% else %}<span class="bad">Over the cap</span>{% endif %}</td></tr>
+    </table>
+    <p class="note">
+      Adds are tested on where the position lands, so a small add to a position
+      already near a ceiling can require the next tier up. Reductions are scaled
+      by the risk removed, need no pathway boxes, and use the same 15 / 30 / 60
+      vote scale.
+    </p>
+  </section>
+
+  {% if r.last_price %}
+  <section class="panel result">
+    <h2>Trade ticket</h2>
+    <table class="kv">
+      <tr><td>Last price ($)</td><td class="num">${{ '%.2f'|format(r.last_price) }}</td></tr>
+      <tr><td>Trade value ($)</td><td class="num">{{ r.trade_value|money }}</td></tr>
+      <tr><td>Shares to trade</td><td class="num">{{ r.trade_shares|shares }}</td></tr>
+      <tr><td>Target position value ($)</td><td class="num">{{ r.target_value|money }}</td></tr>
+      <tr><td>Target shares</td><td class="num">{{ r.target_shares|shares }}</td></tr>
+    </table>
+  </section>
+  {% endif %}
+  {% endif %}
+  {% endif %}
+
+  <footer>
+    <p>
+      Nothing you enter here is saved. This tool does not know the fund's
+      holdings; every number above came from what you typed plus a public price
+      series. It sizes a proposal, it does not authorise one. Students
+      recommend; faculty decide.
+    </p>
+  </footer>
+
+</main>
+</body>
+</html>
