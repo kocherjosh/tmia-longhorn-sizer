@@ -7,6 +7,12 @@ It answers one question: **how much do I ask for.** It shows what the current
 position already costs in standalone active risk, then the add or trim needed to
 sit at each conviction ceiling, in percent of fund, dollars, and shares.
 
+The unit throughout is **standalone active risk**, the same words as the
+"Proposed size" field on the Investment Proposal form, so the number reads
+straight across. *Active* distinguishes it from total volatility (PMC-3.4);
+*standalone* distinguishes it from contribution to portfolio tracking error
+(PMC-8.2). Both adjectives are load bearing.
+
 It sizes a proposal. It does not authorise one. Students recommend; faculty decide.
 
 ---
@@ -134,12 +140,12 @@ Active volatility is the only conversion:
 
 ```
 active_vol  = SQRT(vol_sec² + vol_bmk² − 2 × corr × vol_sec × vol_bmk)
-active_risk = |active_weight| × active_vol × 10,000    (basis points)
+active_risk = |active_weight| × active_vol × 10,000    (bps, standalone)
 ```
 
 Conviction tiers, from `TMIA_Analytical_Canon` PMC-9.3 and `TMIA_Curriculum_Spine_v14`:
 
-| Tier | Boxes | Ceiling | YES votes |
+| Tier | Boxes | Standalone active risk ceiling | YES votes |
 | --- | --- | --- | --- |
 | Low | 1 | 15 bps | 4 |
 | Medium | 1 + 2 | 30 bps | 8 |

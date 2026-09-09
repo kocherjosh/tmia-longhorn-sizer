@@ -12,9 +12,10 @@
   <header>
     <h1>Longhorn Fund Position Sizer</h1>
     <p class="sub">
-      Single-name equity. Every size in this fund is expressed as standalone
-      active risk in basis points, not as a dollar amount or a percent of the
-      fund.
+      Single-name equity. All risk figures are <strong>standalone active
+      risk</strong>: this position on its own, measured against the benchmark,
+      before correlation with the rest of the book. Sizes are in basis points of
+      it, never in dollars or percent of the fund.
     </p>
   </header>
 
@@ -137,7 +138,7 @@
     <h2>Where this position stands today</h2>
     <table class="kv">
       <tr><td>Current active weight</td><td class="num">{{ r.current_active_weight|pct }}</td></tr>
-      <tr class="strong headline"><td>Current active risk (bps)</td><td class="num">{{ r.current_risk_bps|bps }}</td></tr>
+      <tr class="strong headline"><td>Active risk today (bps)</td><td class="num">{{ r.current_risk_bps|bps }}</td></tr>
       <tr><td>Tier this position already uses</td>
           <td class="num">
             {% if r.current_tier %}{{ r.current_tier }}
@@ -156,7 +157,7 @@
         <tr><th></th>{% for g in r.ladder %}<th>{{ g.tier }}</th>{% endfor %}</tr>
       </thead>
       <tbody>
-        <tr><td>Risk ceiling (bps)</td>
+        <tr><td>Standalone active risk ceiling (bps)</td>
             {% for g in r.ladder %}<td class="num">{{ g.ceiling_bps|round|int }}</td>{% endfor %}</tr>
         <tr><td>Pathway boxes required</td>
             {% for g in r.ladder %}<td class="num">{{ g.boxes }}</td>{% endfor %}</tr>
@@ -209,9 +210,9 @@
       <tr><td>Incremental active weight</td><td class="num">{{ r.incremental_weight|signed_pct }}</td></tr>
       <tr><td>New portfolio weight</td><td class="num">{{ r.new_portfolio_weight|pct }}</td></tr>
       <tr><td>New active weight</td><td class="num">{{ r.new_active_weight|pct }}</td></tr>
-      <tr class="strong headline"><td>Position active risk after the trade (bps)</td>
+      <tr class="strong headline"><td>Active risk after the trade (bps)</td>
           <td class="num">{{ r.new_risk_bps|bps }}</td></tr>
-      <tr><td>Standalone risk added / (removed) (bps)</td>
+      <tr><td>Active risk added / (removed) (bps)</td>
           <td class="num">{{ r.delta_risk_bps|signed_bps }}</td></tr>
       <tr class="strong headline"><td>Tier this proposal requires</td>
           <td class="num">
