@@ -1,6 +1,6 @@
 # TMIA Longhorn Fund Position Sizer
 
-A web version of the Longhorn Sizer tab of `TMIA_Position_Sizing_Calculator_v6.xlsx`,
+A web version of the Longhorn Sizer tab of `TMIA_Position_Sizing_Calculator_v7.xlsx`,
 so students can size a proposal from any machine without Bloomberg.
 
 It answers one question: **how much do I ask for.** It shows what the current
@@ -85,8 +85,9 @@ If that fails on Render but works locally, the problem is egress, not the code.
 ```bash
 pip install -r requirements.txt
 SIZER_PASSWORD=demo python app.py       # http://127.0.0.1:5000
-python -m pytest tests/ -q              # 39 tests
+python -m pytest tests/ -q              # 51 tests
 python scripts/check_feed.py NVDA       # live Yahoo check
+python scripts/check_workbook.py W.xlsx # prove the app and the workbook agree
 ```
 
 ---
@@ -99,8 +100,10 @@ python scripts/check_feed.py NVDA       # live Yahoo check
 | `prices.py` | Yahoo fetch, alignment against the benchmark, and the daily cache. |
 | `app.py` | Routes, auth, input parsing, display formatting. |
 | `templates/index.html` | The single page. |
-| `tests/test_sizer.py` | Asserts the model reproduces the v6 workbook exactly. |
+| `tests/test_sizer.py` | Asserts the model reproduces the workbook exactly. |
 | `tests/test_app.py` | Auth, validation, feed failure paths, and the no-persistence guarantee. |
+| `tests/test_prices.py` | The cache, the stale fallback, and the message a student sees when Yahoo fails. |
+| `scripts/check_workbook.py` | Compares every rule cell of the workbook against `sizer.py`. Needs openpyxl. |
 
 `sizer.py` has no dependency on Flask or yfinance, so the math can be reused in a
 notebook, a grader, or a future Endowment sizer without dragging the web app along.
@@ -126,6 +129,12 @@ headers; that is why a Canvas-hosted HTML file was not an option.
 3. Failing both, the page shows a readable message and a link to *Feed down?
    Enter risk by hand*, where the student supplies volatility and correlation
    directly. Everything downstream still works.
+
+The message names the actual problem where it can. A ticker Yahoo does not know
+comes back as a column of blanks rather than an error, so it is reported as a
+spelling problem rather than as thin history; an outage on the benchmark leg is
+named as the benchmark. Typing the benchmark itself as the ticker is refused,
+since a position in the benchmark carries no active risk against itself.
 
 Yahoo's adjusted close differs slightly from whatever Bloomberg field the
 workbook pulls, so expect small differences in volatility against the workbook.
@@ -169,7 +178,7 @@ says so.
 
 **Are adds tested on the resulting position or on the increment?**
 
-This app preserves v5 and v6 workbook behaviour and tests adds on **where the
+This app preserves v5, v6 and v7 workbook behaviour and tests adds on **where the
 position lands**. So a 5 bps add to a 28 bps position requires High and 12 YES.
 
 PMC-9.4 is explicitly incremental for reductions ("up to 15 bps standalone risk

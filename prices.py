@@ -113,6 +113,14 @@ def _download(ticker: str, benchmark: str) -> dict:
         raise PriceError("The price library is not installed on the server.") from exc
 
     symbols = [ticker.upper(), benchmark.upper()]
+    if symbols[0] == symbols[1]:
+        # Two identical symbols come back as one column, and the pair selection
+        # below then yields column labels rather than prices.
+        raise PriceError(
+            f"{symbols[0]} is the benchmark. A position in the benchmark carries "
+            "no active risk against itself, so there is nothing to size."
+        )
+
     end = dt.date.today() + dt.timedelta(days=1)
     start = end - dt.timedelta(days=HISTORY_DAYS)
 
@@ -140,12 +148,27 @@ def _download(ticker: str, benchmark: str) -> dict:
         )
 
     try:
-        closes = frame["Close"][symbols].dropna()
+        block = frame["Close"]
+        closes = block[symbols].dropna()
     except KeyError as exc:
         raise PriceError(
             f"Yahoo did not return closing prices for both {ticker.upper()} and "
             f"{benchmark.upper()}."
         ) from exc
+
+    # A symbol Yahoo does not know still comes back as a column of blanks, so an
+    # empty column is a bad ticker, not a thin overlap. Say which one it is.
+    if block[symbols[0]].dropna().empty:
+        raise PriceError(
+            f"Yahoo does not recognise {symbols[0]}. Check the spelling, or "
+            "enter volatility and correlation by hand below."
+        )
+    if block[symbols[1]].dropna().empty:
+        raise PriceError(
+            f"Yahoo returned no prices for the benchmark {symbols[1]}. Wait a "
+            "minute and try again, or enter volatility and correlation by hand "
+            "below."
+        )
 
     if len(closes) < 30:
         raise PriceError(

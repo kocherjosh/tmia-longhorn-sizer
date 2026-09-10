@@ -1,7 +1,8 @@
 """
 Longhorn Fund position sizing model.
 
-A direct port of the Longhorn Sizer tab of TMIA_Position_Sizing_Calculator_v6.xlsx.
+A direct port of the Longhorn Sizer tab of TMIA_Position_Sizing_Calculator_v7.xlsx.
+Verified cell for cell against it by scripts/check_workbook.py.
 Pure functions only: no network, no disk, no framework. Everything here is
 testable against the workbook, and tests/test_sizer.py does exactly that.
 
@@ -19,7 +20,7 @@ the same 15 / 30 / 60 scale. See OPEN_CONFLICT below.
 
 OPEN CONFLICT, unresolved as of 2026-09-09: PMC-9.4 is explicitly incremental
 for reductions ("up to 15 bps standalone risk removed") while PMC-9.3 states
-only "size cap" for adds. This module preserves v5/v6 workbook behaviour and
+only "size cap" for adds. This module preserves v5, v6 and v7 workbook behaviour and
 tests adds on the resulting position. A ruling is needed before the first live
 vote cycle. Changing it is a one-line edit in required_tier().
 """

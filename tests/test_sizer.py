@@ -1,5 +1,7 @@
 """
-Regression tests against TMIA_Position_Sizing_Calculator_v6.xlsx.
+Regression tests against TMIA_Position_Sizing_Calculator_v7.xlsx.
+
+The same constants hold in v6; the Longhorn Sizer tab is identical in both.
 
 Every expected value here was read out of the recalculated workbook, not
 computed by this code. If a test fails, the app and the workbook disagree and
