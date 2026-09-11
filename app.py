@@ -20,6 +20,7 @@ from functools import wraps
 
 from flask import Flask, Response, render_template, request
 
+import benchmark_weights
 import prices
 import sizer
 
@@ -32,13 +33,19 @@ BENCHMARK = os.environ.get("SIZER_BENCHMARK", "SPY")
 USERNAME = os.environ.get("SIZER_USERNAME", "longhorn")
 PASSWORD = os.environ.get("SIZER_PASSWORD", "")
 
+# A round starting value so the empty form sizes something on the first click.
+# It is a placeholder, not the fund's value. Replace it only with another round
+# placeholder; the fund's actual value never belongs in this repo or on the server.
+DEFAULT_FUND_VALUE = "1000000"
+
 DEFAULTS = {
     "ticker": "",
     "lookback": "126",
-    "portfolio_weight": "",
-    "benchmark_weight": "0",
-    "incremental_weight": "",
-    "fund_value": os.environ.get("SIZER_DEFAULT_FUND_VALUE", ""),
+    "portfolio_weight": "0",
+    "benchmark_weight": "",            # blank means look it up
+    "incremental_weight": "0",
+    # `or`, not a get() default: Render can hand over an empty string.
+    "fund_value": os.environ.get("SIZER_DEFAULT_FUND_VALUE") or DEFAULT_FUND_VALUE,
     "manual": "",
     "vol_security": "",
     "vol_benchmark": "",
@@ -126,12 +133,13 @@ def index():
     if not request.args.get("ticker") and not manual:
         return render_template(
             "index.html", form=form, result=None, error=None,
-            feed=None, benchmark=BENCHMARK, manual=False,
+            feed=None, bench=None, benchmark=BENCHMARK, manual=False,
         )
 
     error = None
     feed = None
     result = None
+    bench = None
 
     try:
         lookback = int(_number(form["lookback"], "lookback", required=False, default=126))
@@ -139,8 +147,11 @@ def index():
             raise InputError("The lookback must be at least two trading days.")
 
         portfolio_weight = _percent(form["portfolio_weight"], "current portfolio weight")
-        benchmark_weight = _percent(form["benchmark_weight"], "benchmark weight",
-                                    required=False)
+        # Blank means look it up from the benchmark's holdings; a typed number wins.
+        benchmark_weight = (
+            _percent(form["benchmark_weight"], "benchmark weight")
+            if form["benchmark_weight"].strip() else None
+        )
         incremental_weight = _percent(form["incremental_weight"],
                                       "proposed incremental weight", required=False)
         fund_value = _number(form["fund_value"], "fund value")
@@ -162,6 +173,12 @@ def index():
                             "last price", required=False, default=0.0)
             if not -1.0 <= corr <= 1.0:
                 raise InputError("The correlation must be between -1 and 1.")
+            if benchmark_weight is None:
+                raise InputError(
+                    f"Enter the benchmark weight, or zero if the name is not in "
+                    f"the {BENCHMARK}. It is only looked up automatically when "
+                    "prices come from the feed."
+                )
             result = sizer.size_from_risk(
                 vol_security=vol_s, vol_benchmark=vol_b, corr=corr,
                 beta_=corr * vol_s / vol_b if vol_b else 0.0,
@@ -173,6 +190,9 @@ def index():
                 last_price=price,
             )
         else:
+            if benchmark_weight is None:
+                bench = benchmark_weights.lookup(form["ticker"], BENCHMARK)
+                benchmark_weight = bench.weight
             series = prices.get_series(form["ticker"], BENCHMARK)
             sec, ben = prices.window(series, lookback)
             feed = series
@@ -184,7 +204,7 @@ def index():
                 portfolio_value=fund_value,
                 last_price=series.last_price,
             )
-    except (InputError, prices.PriceError) as exc:
+    except (InputError, prices.PriceError, benchmark_weights.BenchmarkError) as exc:
         error = str(exc)
     except Exception:                                    # pragma: no cover
         log.exception("unexpected failure sizing %s", form.get("ticker"))
@@ -195,7 +215,7 @@ def index():
 
     return render_template(
         "index.html", form=form, result=result, error=error,
-        feed=feed, benchmark=BENCHMARK, manual=manual,
+        feed=feed, bench=bench, benchmark=BENCHMARK, manual=manual,
     )
 
 

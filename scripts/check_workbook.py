@@ -1,14 +1,14 @@
 #!/usr/bin/env python3
 """Prove that sizer.py and the Longhorn Sizer tab still agree.
 
-    python scripts/check_workbook.py path/to/TMIA_Position_Sizing_Calculator_v6.xlsx
+    python scripts/check_workbook.py path/to/TMIA_Position_Sizing_Calculator_v7.xlsx
 
 The workbook is the other half of this tool and it does not live in this repo.
 A rule change in one that is not mirrored in the other means two tools give
 students different answers, which is worse than either being wrong on its own.
 Run this after any change to sizer.py, and after any edit to the workbook.
 
-Three checks, in order:
+Four checks, in order:
 
 1. Formula drift. Every rule cell's formula text is compared against the text
    this script was transcribed from. If the workbook has been edited, the
@@ -26,8 +26,8 @@ Three checks, in order:
    against the transcription. This covers the cases the saved workbook does not
    sit on, close-outs and the mandate cap in particular.
 
-Needs openpyxl, which is a development dependency and deliberately not in
-requirements.txt; the deployed app never reads a workbook.
+Needs openpyxl, which is in requirements.txt because the app reads State
+Street's holdings file with it. The deployed app never reads the workbook.
 """
 from __future__ import annotations
 

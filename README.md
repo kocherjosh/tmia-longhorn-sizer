@@ -23,12 +23,14 @@ It sizes a proposal. It does not authorise one. Students recommend; faculty deci
 performance, or anything a student types. There is no database. Every input comes
 from the student on each request and nothing is written down.
 
-**Here:** a cache of public closing prices, keyed by ticker.
+**Here:** two caches of public data: daily closing prices keyed by ticker, and
+the benchmark ETF's published holdings, used to look up a name's benchmark
+weight. Neither says anything about the fund.
 
 That posture is deliberate. Access is a single shared class password, which is
 obfuscation rather than access control; assume it circulates within a week. It is
 adequate *because* nothing confidential is behind it. If you ever preload
-holdings or fund value, this stops being true and the access model has to change
+the fund's own holdings or value, this stops being true and the access model has to change
 first.
 
 ---
@@ -63,7 +65,7 @@ Environment → Add Environment Variable:
 | `SIZER_PASSWORD` | the class password | Required. Without it the app returns 503 rather than serving open. |
 | `SIZER_USERNAME` | `longhorn` | Optional, defaults to `longhorn`. |
 | `SIZER_BENCHMARK` | `SPY` | Optional. |
-| `SIZER_DEFAULT_FUND_VALUE` | leave unset | Setting it puts fund value on the server. See the posture note above. |
+| `SIZER_DEFAULT_FUND_VALUE` | leave unset | Unset means the round $1,000,000 starting value in `app.py`. Never set it to the fund's actual value; see the posture note above. |
 
 **4. Stay on the Starter plan, not Free.** A free instance spins down after 15
 minutes of no traffic and takes about a minute to wake. A student opening it on a
@@ -85,7 +87,7 @@ If that fails on Render but works locally, the problem is egress, not the code.
 ```bash
 pip install -r requirements.txt
 SIZER_PASSWORD=demo python app.py       # http://127.0.0.1:5000
-python -m pytest tests/ -q              # 51 tests
+python -m pytest tests/ -q              # 76 tests
 python scripts/check_feed.py NVDA       # live Yahoo check
 python scripts/check_workbook.py W.xlsx # prove the app and the workbook agree
 ```
@@ -98,11 +100,13 @@ python scripts/check_workbook.py W.xlsx # prove the app and the workbook agree
 | --- | --- |
 | `sizer.py` | The model. Pure functions, no network or disk. This is the file to read to check the math. |
 | `prices.py` | Yahoo fetch, alignment against the benchmark, and the daily cache. |
+| `benchmark_weights.py` | Looks up a name's weight in the benchmark from State Street's daily holdings file, cached for the day. |
 | `app.py` | Routes, auth, input parsing, display formatting. |
 | `templates/index.html` | The single page. |
 | `tests/test_sizer.py` | Asserts the model reproduces the workbook exactly. |
 | `tests/test_app.py` | Auth, validation, feed failure paths, and the no-persistence guarantee. |
 | `tests/test_prices.py` | The cache, the stale fallback, and the message a student sees when Yahoo fails. |
+| `tests/test_benchmark.py` | The benchmark weight lookup: share classes, the daily cache, and files that do not look right. |
 | `scripts/check_workbook.py` | Compares every rule cell of the workbook against `sizer.py`. Needs openpyxl. |
 
 `sizer.py` has no dependency on Flask or yfinance, so the math can be reused in a
@@ -143,6 +147,29 @@ it can matter within a basis point of a ceiling.
 
 ---
 
+## The benchmark weight
+
+Left blank, the benchmark weight is looked up from State Street's daily SPY
+holdings file, and the page says which date that file carries. A number typed
+into the box always wins.
+
+It used to default to zero, and that understated risk. Not holding NVDA at an
+8% benchmark weight is an 8% underweight, which is above High on its own. The
+workbook has always asked for the real weight in C21; the app now fills it in.
+
+The looked up value is shown on the results page but never written back into
+the box, so changing the ticker looks up the new name rather than carrying the
+old weight across. Share classes resolve whichever way they are typed: State
+Street writes `BRK.B`, Yahoo only knows `BRK-B`, and each gets the form it knows.
+
+The same defences as prices apply: one fetch per day, yesterday's file served
+and flagged if State Street does not answer, and failing both, the page asks
+the student to type the weight rather than assuming zero. A file that does not
+look like the one this was written against, a changed layout or weights that
+do not add up to the whole fund, is refused rather than read.
+
+---
+
 ## The model
 
 Active volatility is the only conversion:
@@ -174,26 +201,22 @@ single-stock active weight limit and, on the underweight side, by a full
 close-out; where a cap binds, two tiers can show the same number and the page
 says so.
 
-### Open conflict, unresolved
+### Rulings
 
-**Are adds tested on the resulting position or on the increment?**
+Both questions that were open here were settled by Josh Kocher on 10 September
+2026, as the workbook already had them, so no number changed.
 
-This app preserves v5, v6 and v7 workbook behaviour and tests adds on **where the
-position lands**. So a 5 bps add to a 28 bps position requires High and 12 YES.
+**Adds are tested on where the position lands, not on the increment.** A 5 bps
+add to a 28 bps position requires High and 12 YES. This holds even for a buy
+that lowers active risk, such as buying into a large benchmark name the fund is
+underweight: it is judged at the risk it lands on, so it can come back "not
+permitted" while cutting risk. The page says so when it happens.
 
-PMC-9.4 is explicitly incremental for reductions ("up to 15 bps standalone risk
-*removed*") while PMC-9.3 says only "size cap" for adds, and the IP form field
-reads "proposed size", which points the other way. Under an incremental reading
-that same trade is Low and 4 YES.
-
-The two readings give different vote thresholds for the same trade. This needs a
-ruling before the first live vote cycle. Changing it is a one-line edit in
-`required_tier()` in `sizer.py`, and `tests/test_sizer.py` will tell you what else
-moves.
-
-**Secondary.** The canon's constraint stack gate 2 reads "±3% of benchmark weight,
-look-through". The workbook and this app implement a flat 300 bps absolute active
-weight cap. Carried forward from v5; confirm which is intended.
+**The single-stock cap is 300 bps of active weight, applied to both sides.** An
+underweight of more than 3.00% is outside it, which with real benchmark weights
+means simply not holding NVDA, AAPL, MSFT or AMZN. The canon phrases the limit
+two ways; its account table reads "±3% active weight, look-through", which is
+what both builds implement.
 
 ---
 

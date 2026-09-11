@@ -173,3 +173,50 @@ def test_a_lookback_longer_than_the_history_says_what_is_available(monkeypatch):
     with pytest.raises(prices.PriceError) as exc:
         prices.window(series, 252)
     assert "60 trading days" in str(exc.value)
+
+
+# --------------------------------------------------------------------------
+# Share classes: BRK.B to the world, BRK-B to Yahoo
+# --------------------------------------------------------------------------
+
+def _record_yahoo(monkeypatch, unknown=()):
+    """Stub Yahoo, remember each symbol pair asked for, and return blanks for any
+    symbol in `unknown`, which is how Yahoo answers a ticker it does not know."""
+    import yfinance as yf
+    asked = []
+
+    def fake_download(symbols, *args, **kwargs):
+        asked.append(list(symbols))
+        return _frame(symbols, blank=[s for s in symbols if s in unknown])
+
+    monkeypatch.setattr(yf, "download", fake_download)
+    return asked
+
+
+def test_a_share_class_typed_with_a_dot_is_fetched_under_yahoos_dash(monkeypatch):
+    asked = _record_yahoo(monkeypatch, unknown={"BRK.B"})
+    series = prices.get_series("BRK.B", "SPY")
+    assert series.ticker == "BRK-B"
+    assert asked == [["BRK-B", "SPY"]]
+
+
+def test_a_foreign_listing_with_a_longer_suffix_is_left_alone(monkeypatch):
+    asked = _record_yahoo(monkeypatch)
+    prices.get_series("RY.TO", "SPY")
+    assert asked == [["RY.TO", "SPY"]]
+
+
+def test_a_one_letter_exchange_suffix_falls_back_to_the_ticker_as_typed(monkeypatch):
+    """VOD.L looks like a share class. Its dash form is unknown, so the typed form is tried."""
+    asked = _record_yahoo(monkeypatch, unknown={"VOD-L"})
+    series = prices.get_series("VOD.L", "SPY")
+    assert series.ticker == "VOD.L"
+    assert asked == [["VOD-L", "SPY"], ["VOD.L", "SPY"]]
+
+
+def test_an_unknown_share_class_is_reported_the_way_the_student_typed_it(monkeypatch):
+    _record_yahoo(monkeypatch, unknown={"BRK.X", "BRK-X"})
+    with pytest.raises(prices.PriceError) as exc:
+        prices.get_series("BRK.X", "SPY")
+    assert "BRK.X" in str(exc.value)
+

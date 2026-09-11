@@ -20,6 +20,7 @@ import datetime as dt
 import json
 import logging
 import os
+import re
 import tempfile
 import threading
 from dataclasses import dataclass
@@ -40,6 +41,15 @@ _memory: dict[str, dict] = {}
 
 class PriceError(Exception):
     """Raised when prices cannot be retrieved. The message is shown to students."""
+
+
+class UnknownTicker(PriceError):
+    """Yahoo returned no prices for the security itself, as opposed to failing."""
+
+
+# A share class suffix, as in BRK.B or BF.B. Nearly everyone, State Street's
+# holdings file included, writes these with a dot; Yahoo only knows BRK-B.
+_SHARE_CLASS = re.compile(r"[A-Z]{1,5}\.[A-Z]")
 
 
 @dataclass(frozen=True)
@@ -159,7 +169,7 @@ def _download(ticker: str, benchmark: str) -> dict:
     # A symbol Yahoo does not know still comes back as a column of blanks, so an
     # empty column is a bad ticker, not a thin overlap. Say which one it is.
     if block[symbols[0]].dropna().empty:
-        raise PriceError(
+        raise UnknownTicker(
             f"Yahoo does not recognise {symbols[0]}. Check the spelling, or "
             "enter volatility and correlation by hand below."
         )
@@ -193,12 +203,26 @@ def get_series(ticker: str, benchmark: str = "SPY") -> Series:
     On a fetch failure with a cached entry from an earlier day, the stale entry
     is returned with stale=True rather than failing outright. A day-old
     volatility beats no sizer on a Thursday night.
+
+    A share class typed with a dot is fetched under Yahoo's dash first. If Yahoo
+    does not know that form either, the ticker is tried exactly as typed, so a
+    foreign listing such as VOD.L still resolves and an unknown name is
+    reported the way the student wrote it.
     """
     ticker = ticker.strip().upper()
     benchmark = benchmark.strip().upper()
     if not ticker:
         raise PriceError("Enter a ticker.")
 
+    if _SHARE_CLASS.fullmatch(ticker):
+        try:
+            return _cached_series(ticker.replace(".", "-"), benchmark)
+        except UnknownTicker:
+            pass
+    return _cached_series(ticker, benchmark)
+
+
+def _cached_series(ticker: str, benchmark: str) -> Series:
     key = _key(ticker, benchmark)
     today = dt.date.today().isoformat()
 

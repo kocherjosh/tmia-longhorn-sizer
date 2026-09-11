@@ -16,6 +16,7 @@
   --red: #C0392B;
   --green: #2C7A4A;
   --blue: #2E5C8A;
+  --inset: 18px;               /* left and right gutter inside a panel */
 }
 
 * { box-sizing: border-box; }
@@ -67,7 +68,12 @@ h2 {
   margin-bottom: 20px;
 }
 
-.panel > *:not(h2) { margin-left: 18px; margin-right: 18px; }
+.panel > *:not(h2) { margin-left: var(--inset); margin-right: var(--inset); }
+
+/* A table at width 100% that also takes the gutter margins overflows the panel
+   by both gutters, pushing the number column into the right border. Size it to
+   the space between the gutters instead. */
+.panel > table { width: calc(100% - 2 * var(--inset)); }
 
 /* ---------- form ---------- */
 

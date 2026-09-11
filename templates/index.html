@@ -75,17 +75,19 @@
         </label>
         <label>Benchmark weight (%)
           <input name="benchmark_weight" value="{{ form.benchmark_weight }}"
-                 inputmode="decimal" placeholder="0">
-          <small>Zero if the name is not in the {{ benchmark }}.</small>
+                 inputmode="decimal"
+                 placeholder="{{ 'type it' if manual else 'looked up for you' }}">
+          <small>{% if manual %}Zero if the name is not in the {{ benchmark }}.{% else %}Leave blank and it is looked up from the {{ benchmark }}'s holdings. Type a number to override.{% endif %}</small>
         </label>
         <label>Fund value ($)
           <input name="fund_value" value="{{ form.fund_value }}" required
-                 inputmode="decimal" placeholder="14000000">
+                 inputmode="decimal" placeholder="1000000">
+          <small>Replace with the fund's current value. Dollars and shares scale with it; tiers and votes do not.</small>
         </label>
         <label>Proposed incremental weight (%)
           <input name="incremental_weight" value="{{ form.incremental_weight }}"
                  inputmode="decimal" placeholder="0.30">
-          <small>Positive to add, negative to trim. Leave blank to just read the ladder.</small>
+          <small>Positive to add, negative to trim. Zero just reads the ladder.</small>
         </label>
       </div>
     </section>
@@ -137,6 +139,7 @@
   <section class="panel result">
     <h2>Where this position stands today</h2>
     <table class="kv">
+      <tr><td>Benchmark weight</td><td class="num">{{ r.benchmark_weight|pct }}</td></tr>
       <tr><td>Current active weight</td><td class="num">{{ r.current_active_weight|pct }}</td></tr>
       <tr class="strong headline"><td>Active risk today (bps)</td><td class="num">{{ r.current_risk_bps|bps }}</td></tr>
       <tr><td>Tier this position already uses</td>
@@ -147,6 +150,20 @@
           </td></tr>
       <tr><td>Room left inside that tier (bps)</td><td class="num">{{ r.room_bps|bps }}</td></tr>
     </table>
+    {% set underweight_by_absence = r.current_portfolio_weight == 0 and r.benchmark_weight > 0 %}
+    {% if bench or underweight_by_absence %}
+    <p class="note">
+      {% if bench %}
+        {% if bench.held %}{{ form.ticker|upper }} is {{ bench.weight|pct }} of the {{ benchmark }}{% else %}{{ form.ticker|upper }} is not in the {{ benchmark }}, so its benchmark weight is zero{% endif %},
+        per {{ bench.source }}'s holdings file{% if bench.as_of %} dated {{ bench.as_of }}{% endif %}.
+        {% if bench.stale %}{{ bench.source }} did not answer today, so this is the last file it served.{% endif %}
+      {% endif %}
+      {% if underweight_by_absence %}
+        Not holding a benchmark name is itself an active position: an underweight
+        of {{ r.benchmark_weight|pct }}. That is where the active risk above comes from.
+      {% endif %}
+    </p>
+    {% endif %}
   </section>
 
   <section class="panel result">
@@ -229,6 +246,19 @@
       <tr><td>Within the 3.00% single-stock cap?</td>
           <td class="num">{% if r.within_cap %}OK{% else %}<span class="bad">Over the cap</span>{% endif %}</td></tr>
     </table>
+    {% if r.incremental_weight > 0 and r.delta_risk_bps < 0 %}
+    <p class="note">
+      This buy <strong>lowers</strong> active risk by {{ (-r.delta_risk_bps)|bps }} bps,
+      because it narrows an underweight. Adds are still judged on where the
+      position lands, {{ r.new_risk_bps|bps }} bps, not on the change.
+    </p>
+    {% endif %}
+    {% if not r.within_cap and r.new_active_weight < 0 %}
+    <p class="note">
+      The 3.00% single-stock limit applies to underweights too. After this trade
+      the position sits {{ (-r.new_active_weight)|pct }} below the benchmark.
+    </p>
+    {% endif %}
     <p class="note">
       Adds are tested on where the position lands, so a small add to a position
       already near a ceiling can require the next tier up. Reductions are scaled

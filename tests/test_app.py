@@ -18,6 +18,7 @@ os.environ["SIZER_USERNAME"] = "longhorn"
 import pytest
 
 import app as webapp
+import benchmark_weights
 import prices
 
 AUTH = {"Authorization": "Basic " + b64encode(b"longhorn:testpw").decode()}
@@ -36,9 +37,18 @@ def _fake_series(days=300):
     )
 
 
+def _fake_weight(ticker, benchmark="SPY"):
+    """A benchmark weight lookup that never leaves the machine."""
+    return benchmark_weights.Weight(
+        ticker=ticker.upper(), weight=0.0123, held=True,
+        as_of="09-Sep-2026", source="State Street", stale=False,
+    )
+
+
 @pytest.fixture
 def client(monkeypatch):
     monkeypatch.setattr(prices, "get_series", lambda t, b="SPY": _fake_series())
+    monkeypatch.setattr(benchmark_weights, "lookup", _fake_weight)
     webapp.app.config["TESTING"] = True
     with webapp.app.test_client() as c:
         yield c
@@ -217,3 +227,91 @@ def test_nothing_is_persisted(client, tmp_path, monkeypatch):
     _size(client)
     # only the price cache may ever appear here, and the stub never writes one
     assert list(tmp_path.iterdir()) == []
+
+
+# --------------------------------------------------------------------------
+# Starting values
+# --------------------------------------------------------------------------
+
+def test_empty_form_starts_at_zero_and_leaves_the_benchmark_to_be_looked_up(client):
+    body = client.get("/", headers=AUTH).get_data(as_text=True)
+    assert 'name="portfolio_weight" value="0"' in body
+    assert 'name="benchmark_weight" value=""' in body
+    assert 'name="incremental_weight" value="0"' in body
+    assert 'name="fund_value" value="1000000"' in body
+
+
+def test_the_starting_values_size_a_ticker_with_nothing_else_typed(client):
+    resp = client.get(
+        "/?ticker=TEST&lookback=126&portfolio_weight=0&benchmark_weight=0"
+        "&incremental_weight=0&fund_value=1000000",
+        headers=AUTH,
+    )
+    body = resp.get_data(as_text=True)
+    assert resp.status_code == 200
+    assert "Conviction breakpoints" in body
+    assert "No active position" in body
+    assert "The trade you are proposing" not in body     # zero means read the ladder only
+
+
+# --------------------------------------------------------------------------
+# Benchmark weight lookup
+# --------------------------------------------------------------------------
+
+BLANK_BENCHMARK = ("/?ticker=TEST&lookback=126&portfolio_weight=0&benchmark_weight="
+                   "&incremental_weight=0&fund_value=1000000")
+
+
+def test_a_blank_benchmark_weight_is_looked_up_and_dated(client):
+    resp = client.get(BLANK_BENCHMARK, headers=AUTH)
+    body = resp.get_data(as_text=True)
+    assert resp.status_code == 200
+    assert "1.23%" in body                      # the stubbed benchmark weight, used
+    assert "09-Sep-2026" in body                # and dated, so its age is visible
+    assert "underweight" in body                # and a zero holding is explained
+
+
+def test_the_looked_up_weight_is_never_written_back_into_the_form(client):
+    """Otherwise changing the ticker would carry the last name's weight across."""
+    body = client.get(BLANK_BENCHMARK, headers=AUTH).get_data(as_text=True)
+    assert 'name="benchmark_weight" value=""' in body
+
+
+def test_a_typed_benchmark_weight_overrides_the_lookup(client, monkeypatch):
+    def must_not_run(*args, **kwargs):
+        raise AssertionError("looked up despite a typed weight")
+    monkeypatch.setattr(benchmark_weights, "lookup", must_not_run)
+    resp = client.get(BLANK_BENCHMARK.replace("benchmark_weight=", "benchmark_weight=0.5"),
+                      headers=AUTH)
+    assert resp.status_code == 200
+    assert "0.50%" in resp.get_data(as_text=True)
+
+
+def test_a_failed_lookup_asks_for_the_weight_rather_than_assuming_zero(client, monkeypatch):
+    def down(*args, **kwargs):
+        raise benchmark_weights.BenchmarkError("State Street did not answer. Type it in.")
+    monkeypatch.setattr(benchmark_weights, "lookup", down)
+    body = client.get(BLANK_BENCHMARK, headers=AUTH).get_data(as_text=True)
+    assert "State Street did not answer" in body
+    assert "Conviction breakpoints" not in body
+
+
+def test_manual_mode_asks_for_the_benchmark_weight_to_be_typed(client):
+    body = client.get(
+        "/?manual=1&vol_security=40&vol_benchmark=14&corr=0.3&lookback=126"
+        "&portfolio_weight=0&benchmark_weight=&incremental_weight=0&fund_value=1000000",
+        headers=AUTH,
+    ).get_data(as_text=True)
+    assert "Enter the benchmark weight" in body
+    assert "Conviction breakpoints" not in body
+
+
+def test_a_buy_into_an_underweight_says_it_lowers_risk_but_is_judged_where_it_lands(client):
+    body = client.get(
+        "/?ticker=TEST&lookback=126&portfolio_weight=0&benchmark_weight=5"
+        "&incremental_weight=0.3&fund_value=1000000",
+        headers=AUTH,
+    ).get_data(as_text=True)
+    assert "narrows an underweight" in body
+    assert "applies to underweights too" in body
+

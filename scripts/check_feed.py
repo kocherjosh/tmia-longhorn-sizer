@@ -3,14 +3,16 @@
 
     python scripts/check_feed.py NVDA
 
-Run it locally before deploying, and again from a Render shell if the deployed
-app cannot reach Yahoo. It prints the same numbers the app would compute.
+Run it locally before deploying, and again from a Render shell, since egress
+there may differ. It prints the same numbers the app would compute, and the
+benchmark weight the app would look up from State Street.
 """
 import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
+import benchmark_weights
 import prices
 import sizer
 
@@ -41,3 +43,12 @@ for g in r.ladder:
     print(f"    {g.tier:<7} {g.ceiling_bps:>4.0f} bps  ->  "
           f"{g.ceiling_active_weight:>7.2%}  {g.trade_shares:>9,} shares"
           + (f"  (capped by {g.capped_by})" if g.capped_by else ""))
+
+try:
+    w = benchmark_weights.lookup(ticker, "SPY")
+except benchmark_weights.BenchmarkError as exc:
+    print(f"WEIGHTS DOWN: {exc}")
+    raise SystemExit(1)
+held = f"{w.weight:.2%} of SPY" if w.held else "not in SPY"
+print(f"  benchmark weight: {held}, {w.source} file dated {w.as_of}"
+      f"{'  (STALE CACHE)' if w.stale else ''}")

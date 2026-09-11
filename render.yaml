@@ -20,4 +20,4 @@ services:
       - key: SIZER_BENCHMARK
         value: SPY
       - key: SIZER_DEFAULT_FUND_VALUE
-        sync: false        # optional; leave unset to make students type it
+        sync: false        # optional; unset means the round $1,000,000 in app.py, never the fund's real value

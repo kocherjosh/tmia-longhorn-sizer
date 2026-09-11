@@ -16,13 +16,17 @@ TMIA_Curriculum_Spine_v14:
 
 Adds are tested on where the position LANDS, matching the workbook.
 Reductions scale on the risk REMOVED, carry no pathway requirement, and use
-the same 15 / 30 / 60 scale. See OPEN_CONFLICT below.
+the same 15 / 30 / 60 scale. See RULINGS below.
 
-OPEN CONFLICT, unresolved as of 2026-09-09: PMC-9.4 is explicitly incremental
-for reductions ("up to 15 bps standalone risk removed") while PMC-9.3 states
-only "size cap" for adds. This module preserves v5, v6 and v7 workbook behaviour and
-tests adds on the resulting position. A ruling is needed before the first live
-vote cycle. Changing it is a one-line edit in required_tier().
+RULINGS, Josh Kocher, 10 September 2026. Both questions that were open here
+are settled as the workbook already had them, so no number changed.
+
+  1. Adds are tested on where the position lands, not on the increment. That
+     holds even for a buy that lowers active risk, such as buying into a large
+     benchmark name the fund is underweight: it is judged at the risk it lands
+     on, so it can come back "not permitted" while cutting risk.
+  2. The single-stock cap is MAX_ACTIVE_WEIGHT_BPS of active weight, applied to
+     both sides, so an underweight of more than 3.00% is outside it.
 """
 
 from __future__ import annotations
@@ -42,7 +46,8 @@ TIERS = (
 # Single-stock active weight cap, in basis points. Investment Guidelines gate 2
 # of the PMC-8.4 constraint stack. The workbook implements this as a flat
 # absolute cap; the canon phrases it as "+/- 3% of benchmark weight,
-# look-through". Carried forward from v5 pending confirmation.
+# look-through". Kept flat and applied to
+# both sides by ruling, 10 September 2026; see RULINGS in the module docstring.
 MAX_ACTIVE_WEIGHT_BPS = 300.0
 
 
@@ -252,7 +257,7 @@ def required_tier(
     or when the proposal exceeds the High ceiling and is therefore not permitted.
 
     Adds are tested on the resulting position. Reductions are tested on the
-    magnitude of risk removed and need no pathway boxes. See OPEN_CONFLICT in the
+    magnitude of risk removed and need no pathway boxes. See RULINGS in the
     module docstring.
     """
     if incremental_weight == 0:

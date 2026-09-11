@@ -7,14 +7,14 @@ waiting on a human decision.
 
 ## State of the repo
 
-**The app is complete and working.** It is not a spec to implement. Two commits
-on `main`, 51 passing tests, verified against the source workbook. Do not
+**The app is complete and working.** It is not a spec to implement. Several commits
+on `main`, 76 passing tests, verified against the source workbook. Do not
 rebuild it. If asked to "build the sizer," the honest answer is that it is built
 and the work is deployment, verification, or a specific change.
 
 ```bash
 pip install -r requirements.txt
-python -m pytest tests/ -q                 # 51 tests, all should pass, ~2s
+python -m pytest tests/ -q                 # 76 tests, all should pass, ~2s
 SIZER_PASSWORD=demo python app.py          # http://127.0.0.1:5000
 python scripts/check_feed.py NVDA          # live Yahoo check
 ```
@@ -43,8 +43,19 @@ nothing confidential sits behind it. Adding persistence or preloading fund data
 breaks that argument and requires the access model to be revisited *first*. If a
 feature seems to need a database, say so and stop rather than adding one.
 
-**`SIZER_DEFAULT_FUND_VALUE` stays unset in `render.yaml`.** Setting it puts
-client portfolio value on a third-party host.
+**The fund's actual value never goes on the server or in the repo.** On 10
+September 2026 Josh set a round $1,000,000 starting value in `app.py`
+(`DEFAULT_FUND_VALUE`) and zero starting weights, so the empty form sizes
+something on the first click. That figure is a placeholder, not the fund's
+value, confirmed as such by Josh, and the form tells students to replace it. Keep `SIZER_DEFAULT_FUND_VALUE`
+unset in `render.yaml`, and never swap the placeholder for the real value: that
+would put client portfolio value on a third-party host and in a public repo.
+
+**Benchmark holdings are public data, and the only other thing fetched.**
+`benchmark_weights.py` pulls State Street's daily SPY holdings file to fill in a
+name's benchmark weight. It is the same category as the price cache: public,
+cached for the day, and says nothing about the fund. It is not a step toward
+storing the fund's own holdings, which remain off limits.
 
 **The app refuses to run without a password.** No `SIZER_PASSWORD` returns 503.
 Do not add a development default that could ship.
@@ -103,7 +114,7 @@ compares the two directly and found no disagreement:
 Run it after any change to either side:
 
 ```bash
-pip install openpyxl                      # development only, not in requirements.txt
+pip install -r requirements.txt           # includes openpyxl, which the app now uses too
 python scripts/check_workbook.py path/to/TMIA_Position_Sizing_Calculator_v7.xlsx
 ```
 
@@ -187,7 +198,9 @@ now covered by `tests/test_prices.py`:
   server." It is now refused with a sentence explaining why.
 
 **Still unverified: the same check from a Render shell**, since egress there may
-differ. Run `python scripts/check_feed.py NVDA` there after the first deploy.
+differ. Run `python scripts/check_feed.py NVDA` there after the first deploy. It
+now looks up the SPY weight from State Street too, so that one command covers
+both hosts.
 
 Three failure defences exist and should be preserved: the per-day cache, the
 stale-cache fallback with a visible banner, and the manual risk-entry path at
@@ -199,18 +212,22 @@ Everything underneath, pandas and curl_cffi in particular, floats, so a Render
 redeploy months from now can resolve a different stack than the one verified
 here. If a deploy that used to work suddenly does not, suspect that first.
 
-## Open rulings, awaiting Josh. Do not resolve silently.
+## Rulings, settled 10 September 2026
 
-**Are adds tested on the resulting position or on the increment?** The code tests
-adds on where the position lands, matching the workbook, so a 5 bps add to a
-28 bps position requires High and 12 YES. PMC-9.4 is explicitly incremental for
-reductions, and the IP form field reads "proposed size," both of which point the
-other way; under that reading the same trade is Low and 4 YES. It is a one-line
-change in `required_tier()` in `sizer.py`. Flag it, do not pick a side.
+Both questions that used to sit here are settled, by Josh, as the workbook
+already had them. No number moved and the workbook needs no change.
 
-**Is the single-stock cap 300 bps absolute, or 3% of benchmark weight?** The
-canon's constraint stack gate 2 says "±3% of benchmark weight, look-through";
-both builds implement a flat 300 bps. `MAX_ACTIVE_WEIGHT_BPS` in `sizer.py`.
+**Adds are tested on where the position lands, not on the increment.** This
+holds even for a buy that lowers active risk, such as buying into a large
+benchmark name the fund is underweight: NVDA not held at an 8.22% SPY weight is
+269 bps, and a +0.30% buy that cuts that to 260 bps is still "not permitted".
+The page explains it when it happens. Do not "fix" `required_tier()`.
+
+**The single-stock cap is 300 bps of active weight, applied to both sides.** Not
+holding any name above 3% of SPY is outside it. `MAX_ACTIVE_WEIGHT_BPS` stays
+flat. The canon's account table reads "±3% active weight, look-through", which
+matches; its constraint stack says "±3% of benchmark weight", which is the
+phrasing that made this look open.
 
 More generally: the project's standing instruction is to surface conflicts,
 fairness risks, and execution risks rather than smoothing them over. If the
