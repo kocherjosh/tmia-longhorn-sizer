@@ -87,7 +87,7 @@ If that fails on Render but works locally, the problem is egress, not the code.
 ```bash
 pip install -r requirements.txt
 SIZER_PASSWORD=demo python app.py       # http://127.0.0.1:5000
-python -m pytest tests/ -q              # 76 tests
+python -m pytest tests/ -q              # 83 tests
 python scripts/check_feed.py NVDA       # live Yahoo check
 python scripts/check_workbook.py W.xlsx # prove the app and the workbook agree
 ```
@@ -157,10 +157,15 @@ It used to default to zero, and that understated risk. Not holding NVDA at an
 8% benchmark weight is an 8% underweight, which is above High on its own. The
 workbook has always asked for the real weight in C21; the app now fills it in.
 
-The looked up value is shown on the results page but never written back into
-the box, so changing the ticker looks up the new name rather than carrying the
-old weight across. Share classes resolve whichever way they are typed: State
-Street writes `BRK.B`, Yahoo only knows `BRK-B`, and each gets the form it knows.
+A **Look up** button beside the box fills it in before sizing, with the source
+and date underneath, and sizing with the box blank fills it in the same way.
+A filled in weight is tagged with the ticker it belongs to, in a hidden
+`benchmark_for` field. Changing the ticker clears it in the browser, and the
+server also looks the new name up afresh whenever the tag no longer matches,
+so an old weight can never ride along to a different name. Typing over a
+filled in weight makes it the student's own override. Share classes resolve
+whichever way they are typed: State Street writes `BRK.B`, Yahoo only knows
+`BRK-B`, and each gets the form it knows.
 
 The same defences as prices apply: one fetch per day, yesterday's file served
 and flagged if State Street does not answer, and failing both, the page asks

@@ -198,3 +198,20 @@ footer {
   h1 { font-size: 22px; }
   .kv .num { width: 38%; }
 }
+
+/* ---------- benchmark look up ---------- */
+
+.with-button { display: flex; gap: 8px; margin-top: 5px; }
+.with-button input { flex: 1; min-width: 0; margin-top: 0; }
+
+button.lookup {
+  padding: 6px 12px;
+  font-size: 14px;
+  background: var(--panel);
+  color: var(--orange);
+  border: 1px solid var(--orange);
+  white-space: nowrap;
+}
+
+button.lookup:hover { background: #FFF4EC; }
+button.lookup:disabled { opacity: 0.6; cursor: wait; }

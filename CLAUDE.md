@@ -8,13 +8,13 @@ waiting on a human decision.
 ## State of the repo
 
 **The app is complete and working.** It is not a spec to implement. Several commits
-on `main`, 76 passing tests, verified against the source workbook. Do not
+on `main`, 83 passing tests, verified against the source workbook. Do not
 rebuild it. If asked to "build the sizer," the honest answer is that it is built
 and the work is deployment, verification, or a specific change.
 
 ```bash
 pip install -r requirements.txt
-python -m pytest tests/ -q                 # 76 tests, all should pass, ~2s
+python -m pytest tests/ -q                 # 83 tests, all should pass, ~2s
 SIZER_PASSWORD=demo python app.py          # http://127.0.0.1:5000
 python scripts/check_feed.py NVDA          # live Yahoo check
 ```
@@ -56,6 +56,12 @@ would put client portfolio value on a third-party host and in a public repo.
 name's benchmark weight. It is the same category as the price cache: public,
 cached for the day, and says nothing about the fund. It is not a step toward
 storing the fund's own holdings, which remain off limits.
+
+A filled in benchmark weight is tagged with its ticker in the hidden
+`benchmark_for` field, and `_resolve_benchmark()` in `app.py` looks a name up
+afresh when the tag no longer matches the ticker. Keep that guard. Without it, a
+student who changes the ticker sizes the new name at the old name's benchmark
+weight, which for NVDA to anything else is an 8% error nobody would notice.
 
 **The app refuses to run without a password.** No `SIZER_PASSWORD` returns 503.
 Do not add a development default that could ship.
@@ -173,7 +179,7 @@ within a basis point of a ceiling.
 rounds half away from zero. Share counts must match the workbook. Do not replace
 it with `round()`.
 
-## The live Yahoo call: verified locally on 9 September 2026
+## The live feeds: verified locally on 9 September 2026, and from Render on 11 September
 
 The feed logic was written against a stub and the live request had never run.
 It has now, from Windows, against yfinance 1.7.0 on Python 3.14:
@@ -197,10 +203,13 @@ now covered by `tests/test_prices.py`:
   unhandled `ValueError` that reached the student as "something went wrong on the
   server." It is now refused with a sentence explaining why.
 
-**Still unverified: the same check from a Render shell**, since egress there may
-differ. Run `python scripts/check_feed.py NVDA` there after the first deploy. It
-now looks up the SPY weight from State Street too, so that one command covers
-both hosts.
+**Verified from Render on 11 September 2026.** Josh ran
+`python scripts/check_feed.py NVDA` in the Render shell after the deploy that
+added the benchmark weight lookup, and it reached both Yahoo and State Street.
+Every part of the project is now verified end to end. If the deployed app ever
+reports a feed failure that does not reproduce locally, run that command in the
+Render shell again: a difference between the two points at Render's egress, not
+the code.
 
 Three failure defences exist and should be preserved: the per-day cache, the
 stale-cache fallback with a visible banner, and the manual risk-entry path at

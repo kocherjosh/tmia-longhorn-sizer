@@ -271,10 +271,41 @@ def test_a_blank_benchmark_weight_is_looked_up_and_dated(client):
     assert "underweight" in body                # and a zero holding is explained
 
 
-def test_the_looked_up_weight_is_never_written_back_into_the_form(client):
-    """Otherwise changing the ticker would carry the last name's weight across."""
+def test_the_looked_up_weight_is_filled_in_and_tagged_with_its_ticker(client):
     body = client.get(BLANK_BENCHMARK, headers=AUTH).get_data(as_text=True)
-    assert 'name="benchmark_weight" value=""' in body
+    assert 'name="benchmark_weight" value="1.23"' in body
+    assert 'name="benchmark_for" value="TEST"' in body
+
+
+def test_a_weight_filled_in_for_another_ticker_is_looked_up_afresh(client, monkeypatch):
+    """Otherwise changing the ticker would size the new name at the old one's weight."""
+    asked = []
+
+    def lookup(ticker, benchmark="SPY"):
+        asked.append(ticker)
+        return _fake_weight(ticker, benchmark)
+
+    monkeypatch.setattr(benchmark_weights, "lookup", lookup)
+    url = BLANK_BENCHMARK.replace("benchmark_weight=", "benchmark_weight=8.08&benchmark_for=NVDA")
+    body = client.get(url, headers=AUTH).get_data(as_text=True)
+    assert asked == ["TEST"]
+    assert "1.23%" in body
+    assert "8.08%" not in body
+
+
+def test_an_unedited_filled_in_weight_keeps_its_source(client):
+    url = BLANK_BENCHMARK.replace("benchmark_weight=", "benchmark_weight=1.23&benchmark_for=TEST")
+    body = client.get(url, headers=AUTH).get_data(as_text=True)
+    assert "09-Sep-2026" in body
+    assert 'name="benchmark_for" value="TEST"' in body
+
+
+def test_an_edited_filled_in_weight_becomes_the_students_own(client):
+    url = BLANK_BENCHMARK.replace("benchmark_weight=", "benchmark_weight=0.5&benchmark_for=TEST")
+    body = client.get(url, headers=AUTH).get_data(as_text=True)
+    assert "0.50%" in body
+    assert "09-Sep-2026" not in body
+    assert 'name="benchmark_for" value=""' in body
 
 
 def test_a_typed_benchmark_weight_overrides_the_lookup(client, monkeypatch):
@@ -314,4 +345,35 @@ def test_a_buy_into_an_underweight_says_it_lowers_risk_but_is_judged_where_it_la
     ).get_data(as_text=True)
     assert "narrows an underweight" in body
     assert "applies to underweights too" in body
+
+
+# --------------------------------------------------------------------------
+# The Look up button
+# --------------------------------------------------------------------------
+
+def test_the_look_up_button_gets_the_weight_as_json(client):
+    resp = client.get("/benchmark_weight?ticker=test", headers=AUTH)
+    assert resp.status_code == 200
+    data = resp.get_json()
+    assert data["weight"] == "1.23"
+    assert data["ticker"] == "TEST"
+    assert data["held"] is True
+    assert "09-Sep-2026" in data["message"]
+
+
+def test_the_look_up_button_needs_the_class_password(client):
+    assert client.get("/benchmark_weight?ticker=TEST").status_code == 401
+
+
+def test_the_look_up_button_reports_a_failure_readably(client, monkeypatch):
+    def down(*args, **kwargs):
+        raise benchmark_weights.BenchmarkError("State Street did not answer. Type it in.")
+    monkeypatch.setattr(benchmark_weights, "lookup", down)
+    resp = client.get("/benchmark_weight?ticker=TEST", headers=AUTH)
+    assert resp.status_code == 503
+    assert "State Street did not answer" in resp.get_json()["error"]
+
+
+def test_the_look_up_button_asks_for_a_ticker_first(client):
+    assert client.get("/benchmark_weight?ticker=", headers=AUTH).status_code == 400
 

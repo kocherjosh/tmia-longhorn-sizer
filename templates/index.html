@@ -21,6 +21,7 @@
 
   <form method="get" action="/">
     <input type="hidden" name="manual" value="{{ '1' if manual else '' }}">
+    <input type="hidden" name="benchmark_for" value="{{ form.benchmark_for }}">
 
     <section class="panel">
       <h2>Security and window</h2>
@@ -74,10 +75,13 @@
           <small>Zero if the name is not held.</small>
         </label>
         <label>Benchmark weight (%)
-          <input name="benchmark_weight" value="{{ form.benchmark_weight }}"
-                 inputmode="decimal"
-                 placeholder="{{ 'type it' if manual else 'looked up for you' }}">
-          <small>{% if manual %}Zero if the name is not in the {{ benchmark }}.{% else %}Leave blank and it is looked up from the {{ benchmark }}'s holdings. Type a number to override.{% endif %}</small>
+          <span class="with-button">
+            <input name="benchmark_weight" value="{{ form.benchmark_weight }}"
+                   inputmode="decimal"
+                   placeholder="{{ 'type it' if manual else 'blank to look up' }}">
+            {% if not manual %}<button type="button" class="lookup" id="lookup-benchmark">Look up</button>{% endif %}
+          </span>
+          <small id="benchmark-hint" data-default="Press Look up, or leave it blank and it is filled in when you size it. Type a number to override.">{% if manual %}Zero if the name is not in the {{ benchmark }}.{% elif bench_text %}{{ bench_text }}{% else %}Press Look up, or leave it blank and it is filled in when you size it. Type a number to override.{% endif %}</small>
         </label>
         <label>Fund value ($)
           <input name="fund_value" value="{{ form.fund_value }}" required
@@ -151,17 +155,10 @@
       <tr><td>Room left inside that tier (bps)</td><td class="num">{{ r.room_bps|bps }}</td></tr>
     </table>
     {% set underweight_by_absence = r.current_portfolio_weight == 0 and r.benchmark_weight > 0 %}
-    {% if bench or underweight_by_absence %}
+    {% if underweight_by_absence %}
     <p class="note">
-      {% if bench %}
-        {% if bench.held %}{{ form.ticker|upper }} is {{ bench.weight|pct }} of the {{ benchmark }}{% else %}{{ form.ticker|upper }} is not in the {{ benchmark }}, so its benchmark weight is zero{% endif %},
-        per {{ bench.source }}'s holdings file{% if bench.as_of %} dated {{ bench.as_of }}{% endif %}.
-        {% if bench.stale %}{{ bench.source }} did not answer today, so this is the last file it served.{% endif %}
-      {% endif %}
-      {% if underweight_by_absence %}
-        Not holding a benchmark name is itself an active position: an underweight
-        of {{ r.benchmark_weight|pct }}. That is where the active risk above comes from.
-      {% endif %}
+      Not holding a benchmark name is itself an active position: an underweight
+      of {{ r.benchmark_weight|pct }}. That is where the active risk above comes from.
     </p>
     {% endif %}
   </section>
@@ -196,7 +193,7 @@
         <tr class="apply"><td></td>
             {% for g in r.ladder %}
               <td class="num">
-                <a class="link" href="/?ticker={{ form.ticker }}&amp;lookback={{ form.lookback }}&amp;portfolio_weight={{ form.portfolio_weight }}&amp;benchmark_weight={{ form.benchmark_weight }}&amp;fund_value={{ form.fund_value }}&amp;incremental_weight={{ '%.4f'|format(g.trade_weight * 100) }}&amp;manual={{ '1' if manual else '' }}{% if manual %}&amp;vol_security={{ form.vol_security }}&amp;vol_benchmark={{ form.vol_benchmark }}&amp;corr={{ form.corr }}&amp;last_price={{ request.args.get('last_price','') }}{% endif %}">size to {{ g.tier }}</a>
+                <a class="link" href="/?ticker={{ form.ticker }}&amp;lookback={{ form.lookback }}&amp;portfolio_weight={{ form.portfolio_weight }}&amp;benchmark_weight={{ form.benchmark_weight }}&amp;benchmark_for={{ form.benchmark_for }}&amp;fund_value={{ form.fund_value }}&amp;incremental_weight={{ '%.4f'|format(g.trade_weight * 100) }}&amp;manual={{ '1' if manual else '' }}{% if manual %}&amp;vol_security={{ form.vol_security }}&amp;vol_benchmark={{ form.vol_benchmark }}&amp;corr={{ form.corr }}&amp;last_price={{ request.args.get('last_price','') }}{% endif %}">size to {{ g.tier }}</a>
               </td>
             {% endfor %}</tr>
       </tbody>
@@ -292,5 +289,60 @@
   </footer>
 
 </main>
+
+<script>
+/* The Look up button: fetch this ticker's benchmark weight and fill the box.
+   A filled in weight is tagged with its ticker in benchmark_for, so it cannot
+   ride along to a different name. Typing over it makes it the student's own.
+   The server applies the same rule, so nothing depends on this script running. */
+(function () {
+  var button = document.getElementById("lookup-benchmark");
+  if (!button) return;
+  var ticker = document.querySelector("input[name=ticker]");
+  var box = document.querySelector("input[name=benchmark_weight]");
+  var tag = document.querySelector("input[name=benchmark_for]");
+  var hint = document.getElementById("benchmark-hint");
+  var plain = hint.getAttribute("data-default");
+  var norm = function (t) { return t.trim().toUpperCase().replace(/-/g, "."); };
+
+  button.addEventListener("click", function () {
+    var t = ticker.value.trim();
+    if (!t) { hint.textContent = "Enter a ticker first."; ticker.focus(); return; }
+    button.disabled = true;
+    hint.textContent = "Looking up " + t.toUpperCase() + "...";
+    // Built from the origin: a page opened at a user:password@ address cannot
+    // fetch relative to it, and the origin never carries the password.
+    fetch(location.origin + "/benchmark_weight?ticker=" + encodeURIComponent(t),
+          { credentials: "same-origin" })
+      .then(function (r) {
+        if (r.status === 401) {
+          return { error: "Your sign in has lapsed. Reload the page and enter the class password again." };
+        }
+        return r.json();
+      })
+      .then(function (d) {
+        if (d.error) { hint.textContent = d.error; return; }
+        box.value = d.weight;
+        tag.value = d.ticker;
+        hint.textContent = d.message;
+      })
+      .catch(function () {
+        hint.textContent = "The lookup did not answer. Type the weight instead, " +
+                           "or zero if the name is not in the benchmark.";
+      })
+      .then(function () { button.disabled = false; });
+  });
+
+  ticker.addEventListener("input", function () {
+    if (tag.value && tag.value !== norm(ticker.value)) {
+      box.value = ""; tag.value = ""; hint.textContent = plain;
+    }
+  });
+
+  box.addEventListener("input", function () {
+    tag.value = ""; hint.textContent = plain;
+  });
+})();
+</script>
 </body>
 </html>

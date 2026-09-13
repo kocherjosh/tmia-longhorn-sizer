@@ -43,6 +43,7 @@ DEFAULTS = {
     "lookback": "126",
     "portfolio_weight": "0",
     "benchmark_weight": "",            # blank means look it up
+    "benchmark_for": "",               # the ticker a filled in weight belongs to
     "incremental_weight": "0",
     # `or`, not a get() default: Render can hand over an empty string.
     "fund_value": os.environ.get("SIZER_DEFAULT_FUND_VALUE") or DEFAULT_FUND_VALUE,
@@ -118,6 +119,53 @@ def _percent(raw: str, name: str, *, required: bool = True) -> float:
 # Routes
 # --------------------------------------------------------------------------
 
+def _box_percent(weight: float) -> str:
+    """A decimal weight as a student would type it: 0.0808 becomes 8.08."""
+    text = f"{weight * 100:.4f}".rstrip("0").rstrip(".")
+    return text or "0"
+
+
+def _describe(ticker: str, found) -> str:
+    """One sentence saying what the benchmark weight is and where it came from."""
+    name = ticker.strip().upper()
+    what = (f"{name} is {found.weight * 100:.2f}% of the {BENCHMARK}" if found.held
+            else f"{name} is not in the {BENCHMARK}, so its benchmark weight is zero")
+    dated = f" dated {found.as_of}" if found.as_of else ""
+    text = f"{what}, per {found.source}'s holdings file{dated}."
+    if found.stale:
+        text += f" {found.source} did not answer today, so this is the last file it served."
+    return text
+
+
+def _resolve_benchmark(ticker: str, typed: float | None, filled_for: str):
+    """The benchmark weight to size with, and the lookup it came from, if any.
+
+    A weight the page filled in is tagged with the ticker it was looked up for.
+    If the ticker has changed since, that weight belongs to another name, so the
+    new name is looked up rather than sized at the old one's weight. A filled in
+    weight the student has since edited is their own override, as is anything
+    they typed into an empty box.
+    """
+    key = benchmark_weights.normalise(ticker)
+    filled_for = benchmark_weights.normalise(filled_for)
+
+    if typed is not None and not filled_for:
+        return typed, None                          # the student's own number
+
+    if typed is not None and filled_for == key:
+        try:
+            found = benchmark_weights.lookup(ticker, BENCHMARK)
+        except benchmark_weights.BenchmarkError:
+            return typed, None                      # filled in earlier; keep it
+        if abs(found.weight - typed) < 5e-7:        # unedited, to the four decimals shown
+            return found.weight, found
+        return typed, None                          # edited, so now the student's own
+
+    # blank, or filled in for a different ticker
+    found = benchmark_weights.lookup(ticker, BENCHMARK)
+    return found.weight, found
+
+
 @app.route("/healthz")
 def healthz():
     return {"ok": True}, 200
@@ -133,7 +181,8 @@ def index():
     if not request.args.get("ticker") and not manual:
         return render_template(
             "index.html", form=form, result=None, error=None,
-            feed=None, bench=None, benchmark=BENCHMARK, manual=False,
+            feed=None, bench=None, bench_text=None, benchmark=BENCHMARK,
+            manual=False,
         )
 
     error = None
@@ -190,9 +239,14 @@ def index():
                 last_price=price,
             )
         else:
-            if benchmark_weight is None:
-                bench = benchmark_weights.lookup(form["ticker"], BENCHMARK)
-                benchmark_weight = bench.weight
+            benchmark_weight, bench = _resolve_benchmark(
+                form["ticker"], benchmark_weight, form["benchmark_for"])
+            # Show the weight in the box, tagged with the name it belongs to.
+            if bench:
+                form["benchmark_weight"] = _box_percent(bench.weight)
+                form["benchmark_for"] = bench.ticker
+            else:
+                form["benchmark_for"] = ""
             series = prices.get_series(form["ticker"], BENCHMARK)
             sec, ben = prices.window(series, lookback)
             feed = series
@@ -215,8 +269,31 @@ def index():
 
     return render_template(
         "index.html", form=form, result=result, error=error,
-        feed=feed, bench=bench, benchmark=BENCHMARK, manual=manual,
+        feed=feed, bench=bench,
+        bench_text=_describe(form["ticker"], bench) if bench else None,
+        benchmark=BENCHMARK, manual=manual,
     )
+
+
+@app.route("/benchmark_weight")
+@require_password
+def benchmark_weight_lookup():
+    """The Look up button's source: one ticker's benchmark weight, as JSON."""
+    ticker = request.args.get("ticker", "").strip()
+    if not ticker:
+        return {"error": "Enter a ticker first."}, 400
+    try:
+        found = benchmark_weights.lookup(ticker, BENCHMARK)
+    except benchmark_weights.BenchmarkError as exc:
+        return {"error": str(exc)}, 503
+    return {
+        "ticker": found.ticker,
+        "weight": _box_percent(found.weight),
+        "held": found.held,
+        "as_of": found.as_of,
+        "stale": found.stale,
+        "message": _describe(ticker, found),
+    }
 
 
 # --------------------------------------------------------------------------
