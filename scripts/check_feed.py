@@ -27,6 +27,7 @@ except prices.PriceError as exc:
 
 sec, ben = prices.window(series, lookback)
 r = sizer.size(
+    cohort="graduate",          # only the ceilings are printed, and those are shared
     security_returns=sec, benchmark_returns=ben,
     current_portfolio_weight=0.0, benchmark_weight=0.0,
     incremental_weight=0.0, portfolio_value=14_000_000, last_price=series.last_price,

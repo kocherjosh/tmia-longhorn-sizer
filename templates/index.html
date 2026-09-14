@@ -38,6 +38,16 @@
           <input name="lookback" value="{{ form.lookback }}" inputmode="numeric">
           <small>126 holds two earnings prints; 63 holds one.</small>
         </label>
+        <div class="field">
+          <span class="field-label">Cohort</span>
+          <span class="radios">
+            <label class="radio"><input type="radio" name="cohort" value="graduate"
+                   {% if form.cohort == 'graduate' %}checked{% endif %}> Graduate, 6 / 10 / 13 YES</label>
+            <label class="radio"><input type="radio" name="cohort" value="undergraduate"
+                   {% if form.cohort == 'undergraduate' %}checked{% endif %}> Undergraduate, 8 / 12 / 16 YES</label>
+          </span>
+          <small>Nothing is preselected. The vote counts differ, so the tool will not guess.</small>
+        </div>
       </div>
     </section>
 
@@ -193,13 +203,14 @@
         <tr class="apply"><td></td>
             {% for g in r.ladder %}
               <td class="num">
-                <a class="link" href="/?ticker={{ form.ticker }}&amp;lookback={{ form.lookback }}&amp;portfolio_weight={{ form.portfolio_weight }}&amp;benchmark_weight={{ form.benchmark_weight }}&amp;benchmark_for={{ form.benchmark_for }}&amp;fund_value={{ form.fund_value }}&amp;incremental_weight={{ '%.4f'|format(g.trade_weight * 100) }}&amp;manual={{ '1' if manual else '' }}{% if manual %}&amp;vol_security={{ form.vol_security }}&amp;vol_benchmark={{ form.vol_benchmark }}&amp;corr={{ form.corr }}&amp;last_price={{ request.args.get('last_price','') }}{% endif %}">size to {{ g.tier }}</a>
+                <a class="link" href="/?ticker={{ form.ticker }}&amp;lookback={{ form.lookback }}&amp;portfolio_weight={{ form.portfolio_weight }}&amp;benchmark_weight={{ form.benchmark_weight }}&amp;benchmark_for={{ form.benchmark_for }}&amp;cohort={{ form.cohort }}&amp;fund_value={{ form.fund_value }}&amp;incremental_weight={{ '%.4f'|format(g.trade_weight * 100) }}&amp;manual={{ '1' if manual else '' }}{% if manual %}&amp;vol_security={{ form.vol_security }}&amp;vol_benchmark={{ form.vol_benchmark }}&amp;corr={{ form.corr }}&amp;last_price={{ request.args.get('last_price','') }}{% endif %}">size to {{ g.tier }}</a>
               </td>
             {% endfor %}</tr>
       </tbody>
     </table>
     </div>
     <p class="note">
+      Vote counts are the {{ r.cohort }} thresholds.
       The bold row is the answer to &ldquo;how much do I ask for.&rdquo; Positive
       means buy that much of the fund to reach the ceiling; in parentheses means
       trim that much to fall back to it.

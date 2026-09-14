@@ -9,10 +9,10 @@ testable against the workbook, and tests/test_sizer.py does exactly that.
 Governing rules, from TMIA_Analytical_Canon PMC-9.3 and PMC-9.4 and
 TMIA_Curriculum_Spine_v14:
 
-  Tier    Boxes          Ceiling         YES votes
-  Low     1              15 bps          4
-  Medium  1 + 2          30 bps          8
-  High    1 + 2 + 3      60 bps          12
+  Tier    Boxes          Ceiling    YES votes, graduate   YES votes, undergraduate
+  Low     1              15 bps     6                     8
+  Medium  1 + 2          30 bps     10                    12
+  High    1 + 2 + 3      60 bps     13                    16
 
 Adds are tested on where the position LANDS, matching the workbook.
 Reductions scale on the risk REMOVED, carry no pathway requirement, and use
@@ -27,6 +27,12 @@ are settled as the workbook already had them, so no number changed.
      on, so it can come back "not permitted" while cutting risk.
   2. The single-stock cap is MAX_ACTIVE_WEIGHT_BPS of active weight, applied to
      both sides, so an underweight of more than 3.00% is outside it.
+  3. Vote thresholds differ by cohort, 13 September 2026: graduate 6, 10, 13 and
+     undergraduate 8, 12, 16, for reductions as well as adds. These supersede the
+     4, 8, 12 in PMC-9.3 and PMC-9.4 for both cohorts, so the canon and the
+     Curriculum Spine need the same change. There is no default cohort: the
+     caller has to say which one, because a wrong cohort gives a plausible but
+     wrong vote count.
 """
 
 from __future__ import annotations
@@ -36,12 +42,22 @@ from dataclasses import dataclass, field
 
 TRADING_DAYS = 252
 
-# Tier ceilings in basis points of standalone active risk.
+# Tier ceilings in basis points of standalone active risk. The ceilings, the
+# pathway boxes and the mandate cap are the same for every cohort. Only the vote
+# thresholds differ.
 TIERS = (
-    ("Low", 15.0, "Box 1", 4),
-    ("Medium", 30.0, "Boxes 1 + 2", 8),
-    ("High", 60.0, "Boxes 1 + 2 + 3", 12),
+    ("Low", 15.0, "Box 1"),
+    ("Medium", 30.0, "Boxes 1 + 2"),
+    ("High", 60.0, "Boxes 1 + 2 + 3"),
 )
+
+# YES votes required at each tier, by cohort. A graduate cohort is about twenty
+# students and an undergraduate one up to sixty across concurrent teams, so the
+# same trade needs a different count of the room to clear. See RULINGS above.
+COHORTS = {
+    "graduate": (6, 10, 13),
+    "undergraduate": (8, 12, 16),
+}
 
 # Single-stock active weight cap, in basis points. Investment Guidelines gate 2
 # of the PMC-8.4 constraint stack. The workbook implements this as a flat
@@ -124,7 +140,7 @@ def simple_returns(prices: list[float]) -> list[float]:
 
 def tier_for_risk(risk_bps: float) -> str | None:
     """Which tier a given standalone active risk sits in. None if above High."""
-    for name, ceiling, _boxes, _votes in TIERS:
+    for name, ceiling, _boxes in TIERS:
         if risk_bps <= ceiling:
             return name
     return None
@@ -132,16 +148,32 @@ def tier_for_risk(risk_bps: float) -> str | None:
 
 def room_in_tier(risk_bps: float) -> float:
     """Basis points of headroom before the position crosses into the next tier."""
-    for _name, ceiling, _boxes, _votes in TIERS:
+    for _name, ceiling, _boxes in TIERS:
         if risk_bps <= ceiling:
             return ceiling - risk_bps
     return 0.0
 
 
-def votes_for_tier(tier: str) -> int:
-    for name, _ceiling, _boxes, votes in TIERS:
+def normalise_cohort(cohort: str) -> str:
+    """The cohort key, or a ValueError naming what is allowed.
+
+    There is deliberately no default. A wrong cohort produces a plausible but
+    wrong vote count, which is the kind of quiet error this tool exists to
+    prevent, so the caller has to say which cohort is voting.
+    """
+    key = (cohort or "").strip().lower()
+    if key not in COHORTS:
+        raise ValueError(
+            f"cohort must be one of {', '.join(sorted(COHORTS))}, got {cohort!r}"
+        )
+    return key
+
+
+def votes_for_tier(tier: str, cohort: str) -> int:
+    scale = COHORTS[normalise_cohort(cohort)]
+    for index, (name, _ceiling, _boxes) in enumerate(TIERS):
         if name == tier:
-            return votes
+            return scale[index]
     raise ValueError(f"unknown tier {tier!r}")
 
 
@@ -174,6 +206,7 @@ class Result:
     beta: float
     active_vol: float
     observations: int
+    cohort: str
 
     # where the position stands today
     current_portfolio_weight: float
@@ -250,6 +283,7 @@ def required_tier(
     incremental_weight: float,
     new_risk_bps: float,
     delta_risk_bps: float,
+    cohort: str,
 ) -> tuple[str | None, int | None, bool]:
     """Tier and YES votes a proposal requires.
 
@@ -265,17 +299,18 @@ def required_tier(
 
     if incremental_weight < 0:
         magnitude = abs(delta_risk_bps)
-        tier = tier_for_risk(magnitude) or "High"   # a close-out is always 12 YES
-        return tier, votes_for_tier(tier), True
+        tier = tier_for_risk(magnitude) or "High"   # a close-out is always the top count
+        return tier, votes_for_tier(tier, cohort), True
 
     tier = tier_for_risk(new_risk_bps)
     if tier is None:
         return None, None, False
-    return tier, votes_for_tier(tier), False
+    return tier, votes_for_tier(tier, cohort), False
 
 
 def size(
     *,
+    cohort: str,
     security_returns: list[float],
     benchmark_returns: list[float],
     current_portfolio_weight: float,
@@ -286,6 +321,7 @@ def size(
 ) -> Result:
     """Run the full model from return series. Weights are decimals: 0.0033 is 33 bps."""
     return size_from_risk(
+        cohort=cohort,
         vol_security=annualised_vol(security_returns),
         vol_benchmark=annualised_vol(benchmark_returns),
         corr=correlation(benchmark_returns, security_returns),
@@ -301,6 +337,7 @@ def size(
 
 def size_from_risk(
     *,
+    cohort: str,
     vol_security: float,
     vol_benchmark: float,
     corr: float,
@@ -317,6 +354,7 @@ def size_from_risk(
     This is the entry point the app uses when the price feed is unavailable and
     the student supplies volatilities and correlation by hand.
     """
+    cohort = normalise_cohort(cohort)
     vol_s, vol_b, bta = vol_security, vol_benchmark, beta_
     avol = active_volatility(vol_s, vol_b, corr)
 
@@ -328,7 +366,7 @@ def size_from_risk(
     direction = -1 if current_active < 0 else 1
 
     ladder: list[Rung] = []
-    for name, ceiling_bps, boxes, votes in TIERS:
+    for (name, ceiling_bps, boxes), votes in zip(TIERS, COHORTS[cohort]):
         ceiling_weight, capped_by = _ceiling_weight(
             ceiling_bps, avol, benchmark_weight, direction
         )
@@ -356,7 +394,7 @@ def size_from_risk(
     delta_risk = new_risk - current_risk
 
     tier, votes, is_reduction = required_tier(
-        incremental_weight, new_risk, delta_risk
+        incremental_weight, new_risk, delta_risk, cohort
     )
 
     trade_value = incremental_weight * portfolio_value
@@ -369,6 +407,7 @@ def size_from_risk(
         beta=bta,
         active_vol=avol,
         observations=observations,
+        cohort=cohort,
         current_portfolio_weight=current_portfolio_weight,
         benchmark_weight=benchmark_weight,
         current_active_weight=current_active,

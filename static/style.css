@@ -215,3 +215,22 @@ button.lookup {
 
 button.lookup:hover { background: #FFF4EC; }
 button.lookup:disabled { opacity: 0.6; cursor: wait; }
+
+/* ---------- cohort ---------- */
+
+.field { display: flex; flex-direction: column; font-size: 14px; color: var(--slate); }
+.field small { color: var(--gray); font-size: 11.5px; margin-top: 4px; }
+
+.radios { display: flex; flex-direction: column; gap: 5px; margin-top: 7px; }
+
+label.radio {
+  display: flex;
+  flex-direction: row;          /* the base label rule stacks; radios sit inline */
+  align-items: center;
+  gap: 7px;
+  font-size: 14px;
+  color: var(--text);
+  cursor: pointer;
+}
+
+label.radio input { margin: 0; accent-color: var(--orange); }

@@ -8,13 +8,13 @@ waiting on a human decision.
 ## State of the repo
 
 **The app is complete and working.** It is not a spec to implement. Several commits
-on `main`, 83 passing tests, verified against the source workbook. Do not
+on `main`, 99 passing tests, verified against the source workbook. Do not
 rebuild it. If asked to "build the sizer," the honest answer is that it is built
 and the work is deployment, verification, or a specific change.
 
 ```bash
 pip install -r requirements.txt
-python -m pytest tests/ -q                 # 83 tests, all should pass, ~2s
+python -m pytest tests/ -q                 # 99 tests, all should pass, ~2s
 SIZER_PASSWORD=demo python app.py          # http://127.0.0.1:5000
 python scripts/check_feed.py NVDA          # live Yahoo check
 ```
@@ -73,7 +73,7 @@ web and data layers out of it.
 
 **Tests are pinned to the workbook, not to the code.** Every expected value in
 `tests/test_sizer.py` was read out of a recalculated
-`TMIA_Position_Sizing_Calculator_v7.xlsx`, not computed by this repo. If a test
+`TMIA_Position_Sizing_Calculator_v8.xlsx`, not computed by this repo. If a test
 fails, the app and the workbook disagree and the presumption is that the app is
 wrong. **Never relax an assertion or widen a tolerance to make a change pass.**
 If a rule change legitimately moves an expected value, update it in the same
@@ -83,6 +83,9 @@ commit and say so in the message, so the diff is the record.
 student.** The predecessor spreadsheet had a Low/Medium/High dropdown; it taught
 the rule backwards. PMC-9.3 states the YES threshold follows the requested size,
 not the proposer's eligibility. Do not reintroduce a tier selector.
+
+The cohort is a different thing and the student does pick it, because vote
+counts differ by programme and neither one can be inferred from the trade.
 
 **The unit is "standalone active risk."** The ladder's ceiling row carries the
 full phrase because it matches the Investment Proposal form field the student
@@ -98,30 +101,35 @@ than a visible hole.
 
 ## The workbook is the other half, and it is not in this repo
 
-`TMIA_Position_Sizing_Calculator_v7.xlsx` implements the same rules for use at a
+`TMIA_Position_Sizing_Calculator_v8.xlsx` implements the same rules for use at a
 Bloomberg terminal. **The two must stay in sync.** A rule change in `sizer.py`
 that is not mirrored in the workbook means two tools give students different
 answers, which is worse than either tool being wrong consistently.
 
-**Verified in sync against v7 on 9 September 2026.** `scripts/check_workbook.py`
+**Verified in sync against v8 on 13 September 2026.** `scripts/check_workbook.py`
 compares the two directly and found no disagreement:
 
-* 27 rule formulas and 3 tier ceilings unchanged from what the script was
-  transcribed from. The Longhorn Sizer rule cells are identical in v6 and v7.
+* 30 rule formulas and 3 tier ceilings unchanged from what the script was
+  transcribed from.
 * The four risk constants pinned in `tests/test_sizer.py` reproduced from the
   workbook's own pasted price series to machine precision.
 * All 31 output cells match Excel's own recalculated results exactly, for the
   case the workbook is saved on. This is the check that takes the script's
   transcription out of the loop, and v7 is the first version that carries the
   cached values needed for it.
-* 136,760 further comparisons across 5,260 positions and four volatility
-  regimes, covering close-outs and the mandate cap, all agreeing.
+* 273,520 further comparisons across 10,520 positions and four volatility
+  regimes, run for both cohorts, covering close-outs and the mandate cap.
+
+v8 was written with openpyxl, which does not evaluate, so it arrives with no
+cached results at all and the check above skips its third step and says so.
+Open v8 in Excel, pick a cohort in `C10`, let it recalculate, and save, and that
+step comes back.
 
 Run it after any change to either side:
 
 ```bash
 pip install -r requirements.txt           # includes openpyxl, which the app now uses too
-python scripts/check_workbook.py path/to/TMIA_Position_Sizing_Calculator_v7.xlsx
+python scripts/check_workbook.py path/to/TMIA_Position_Sizing_Calculator_v8.xlsx
 ```
 
 It checks formula text before it checks numbers, so an edit to the workbook makes
@@ -139,11 +147,13 @@ name the cells. The relevant ones on the `Longhorn Sizer` tab:
 
 | Cell | Holds |
 | --- | --- |
+| `C10` | cohort, Graduate or Undergraduate (input, blank until chosen) |
 | `C16` | active volatility |
 | `C20`, `C21` | current portfolio weight, benchmark weight (inputs) |
 | `C23` | active risk today, bps |
 | `C24`, `C25` | current tier, room left in tier |
 | `C30:E30` | tier ceilings, 15 / 30 / 60 |
+| `C32:E32` | YES votes, formulas that follow `C10` |
 | `C33:E37` | the ladder: ceiling weights, add/trim, dollars, shares |
 | `C41` | proposed incremental weight (input) |
 | `C44`&ndash;`C48` | risk after trade, delta, required tier, votes, cap test |
@@ -237,6 +247,16 @@ holding any name above 3% of SPY is outside it. `MAX_ACTIVE_WEIGHT_BPS` stays
 flat. The canon's account table reads "±3% active weight, look-through", which
 matches; its constraint stack says "±3% of benchmark weight", which is the
 phrasing that made this look open.
+
+**Vote thresholds differ by cohort, 13 September 2026.** Graduate 6, 10, 13 and
+undergraduate 8, 12, 16, for reductions as well as adds. `COHORTS` in `sizer.py`,
+`C10` and `C32:E32` in the workbook. These supersede the 4, 8, 12 in PMC-9.3 and
+PMC-9.4 for both cohorts, so the canon and the Curriculum Spine now disagree with
+both tools until Josh updates them. The canon already flagged the gap: Appendix
+B.4 records that the undergraduate trade cycle is unspecified, and that a 12-YES
+threshold means something different at twenty students than at sixty. There is no
+default cohort anywhere: the app refuses to size, the workbook shows "pick a
+cohort", and `sizer.py` raises.
 
 More generally: the project's standing instruction is to surface conflicts,
 fairness risks, and execution risks rather than smoothing them over. If the

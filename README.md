@@ -1,6 +1,6 @@
 # TMIA Longhorn Fund Position Sizer
 
-A web version of the Longhorn Sizer tab of `TMIA_Position_Sizing_Calculator_v7.xlsx`,
+A web version of the Longhorn Sizer tab of `TMIA_Position_Sizing_Calculator_v8.xlsx`,
 so students can size a proposal from any machine without Bloomberg.
 
 It answers one question: **how much do I ask for.** It shows what the current
@@ -87,7 +87,7 @@ If that fails on Render but works locally, the problem is egress, not the code.
 ```bash
 pip install -r requirements.txt
 SIZER_PASSWORD=demo python app.py       # http://127.0.0.1:5000
-python -m pytest tests/ -q              # 83 tests
+python -m pytest tests/ -q              # 99 tests
 python scripts/check_feed.py NVDA       # live Yahoo check
 python scripts/check_workbook.py W.xlsx # prove the app and the workbook agree
 ```
@@ -186,11 +186,18 @@ active_risk = |active_weight| × active_vol × 10,000    (bps, standalone)
 
 Conviction tiers, from `TMIA_Analytical_Canon` PMC-9.3 and `TMIA_Curriculum_Spine_v14`:
 
-| Tier | Boxes | Standalone active risk ceiling | YES votes |
-| --- | --- | --- | --- |
-| Low | 1 | 15 bps | 4 |
-| Medium | 1 + 2 | 30 bps | 8 |
-| High | 1 + 2 + 3 | 60 bps | 12 |
+| Tier | Boxes | Standalone active risk ceiling | YES votes, graduate | YES votes, undergraduate |
+| --- | --- | --- | --- | --- |
+| Low | 1 | 15 bps | 6 | 8 |
+| Medium | 1 + 2 | 30 bps | 10 | 12 |
+| High | 1 + 2 + 3 | 60 bps | 13 | 16 |
+
+The ceilings, the pathway boxes and the 300 bps cap are the same for both
+cohorts. Only the vote counts differ, because a graduate cohort is about twenty
+students and an undergraduate one up to sixty across concurrent teams. The
+student picks a cohort on the form. Nothing is preselected and the page refuses
+to size until one is chosen, because a wrong cohort gives a plausible but wrong
+vote count.
 
 The tier is **derived from the requested size**, not selected by the student.
 PMC-9.3 is explicit that the YES threshold follows the requested size rather than
@@ -198,7 +205,8 @@ the tier the proposer is eligible for, so the v5 dropdown taught the rule
 backwards and is gone.
 
 Reductions branch separately: they scale on the risk removed, need no pathway
-boxes, and use the same 15 / 30 / 60 scale (PMC-9.4).
+boxes, and use the same 15 / 30 / 60 scale (PMC-9.4). They use their cohort's
+vote counts too.
 
 The ladder runs in the direction of the current active weight, so a benchmark
 name held at zero reads as an underweight. Ceilings are capped by the 300 bps
@@ -223,6 +231,12 @@ means simply not holding NVDA, AAPL, MSFT or AMZN. The canon phrases the limit
 two ways; its account table reads "±3% active weight, look-through", which is
 what both builds implement.
 
+**Vote thresholds differ by cohort, from 13 September 2026.** Graduate 6, 10 and
+13; undergraduate 8, 12 and 16, for reductions as well as adds. These supersede
+the 4, 8, 12 in PMC-9.3 and PMC-9.4 for both cohorts, so the canon and the
+Curriculum Spine need the same change. The workbook already has it, in `C10` and
+`C32:E32`.
+
 ---
 
 ## Changing the rules
@@ -232,10 +246,14 @@ top of `sizer.py`:
 
 ```python
 TIERS = (
-    ("Low",    15.0, "Box 1",           4),
-    ("Medium", 30.0, "Boxes 1 + 2",     8),
-    ("High",   60.0, "Boxes 1 + 2 + 3", 12),
+    ("Low",    15.0, "Box 1"),
+    ("Medium", 30.0, "Boxes 1 + 2"),
+    ("High",   60.0, "Boxes 1 + 2 + 3"),
 )
+COHORTS = {
+    "graduate":      (6, 10, 13),
+    "undergraduate": (8, 12, 16),
+}
 MAX_ACTIVE_WEIGHT_BPS = 300.0
 ```
 

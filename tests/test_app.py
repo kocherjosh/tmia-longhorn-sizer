@@ -94,7 +94,7 @@ def _size(client, **params):
     q = {
         "ticker": "TEST", "lookback": "126", "portfolio_weight": "0.33",
         "benchmark_weight": "0", "fund_value": "14000000",
-        "incremental_weight": "0.30",
+        "incremental_weight": "0.30", "cohort": "graduate",
     }
     q.update(params)
     return client.get("/", query_string=q, headers=AUTH)
@@ -195,6 +195,7 @@ def test_manual_mode_needs_no_feed(client, monkeypatch):
             "vol_benchmark": "14.0", "corr": "0.26", "last_price": "35.66",
             "portfolio_weight": "0.33", "benchmark_weight": "0",
             "fund_value": "14000000", "incremental_weight": "0.30",
+            "cohort": "graduate",
         },
         headers=AUTH,
     )
@@ -244,7 +245,7 @@ def test_empty_form_starts_at_zero_and_leaves_the_benchmark_to_be_looked_up(clie
 def test_the_starting_values_size_a_ticker_with_nothing_else_typed(client):
     resp = client.get(
         "/?ticker=TEST&lookback=126&portfolio_weight=0&benchmark_weight=0"
-        "&incremental_weight=0&fund_value=1000000",
+        "&incremental_weight=0&fund_value=1000000&cohort=graduate",
         headers=AUTH,
     )
     body = resp.get_data(as_text=True)
@@ -259,7 +260,7 @@ def test_the_starting_values_size_a_ticker_with_nothing_else_typed(client):
 # --------------------------------------------------------------------------
 
 BLANK_BENCHMARK = ("/?ticker=TEST&lookback=126&portfolio_weight=0&benchmark_weight="
-                   "&incremental_weight=0&fund_value=1000000")
+                   "&incremental_weight=0&fund_value=1000000&cohort=graduate")
 
 
 def test_a_blank_benchmark_weight_is_looked_up_and_dated(client):
@@ -330,7 +331,8 @@ def test_a_failed_lookup_asks_for_the_weight_rather_than_assuming_zero(client, m
 def test_manual_mode_asks_for_the_benchmark_weight_to_be_typed(client):
     body = client.get(
         "/?manual=1&vol_security=40&vol_benchmark=14&corr=0.3&lookback=126"
-        "&portfolio_weight=0&benchmark_weight=&incremental_weight=0&fund_value=1000000",
+        "&portfolio_weight=0&benchmark_weight=&incremental_weight=0&fund_value=1000000"
+        "&cohort=graduate",
         headers=AUTH,
     ).get_data(as_text=True)
     assert "Enter the benchmark weight" in body
@@ -340,7 +342,7 @@ def test_manual_mode_asks_for_the_benchmark_weight_to_be_typed(client):
 def test_a_buy_into_an_underweight_says_it_lowers_risk_but_is_judged_where_it_lands(client):
     body = client.get(
         "/?ticker=TEST&lookback=126&portfolio_weight=0&benchmark_weight=5"
-        "&incremental_weight=0.3&fund_value=1000000",
+        "&incremental_weight=0.3&fund_value=1000000&cohort=graduate",
         headers=AUTH,
     ).get_data(as_text=True)
     assert "narrows an underweight" in body
@@ -376,4 +378,41 @@ def test_the_look_up_button_reports_a_failure_readably(client, monkeypatch):
 
 def test_the_look_up_button_asks_for_a_ticker_first(client):
     assert client.get("/benchmark_weight?ticker=", headers=AUTH).status_code == 400
+
+
+# --------------------------------------------------------------------------
+# Cohort
+# --------------------------------------------------------------------------
+
+def test_the_form_offers_both_cohorts_with_neither_preselected(client):
+    body = client.get("/", headers=AUTH).get_data(as_text=True)
+    assert 'name="cohort" value="graduate"' in body
+    assert 'name="cohort" value="undergraduate"' in body
+    assert "checked" not in body
+
+
+def test_sizing_without_a_cohort_is_refused_not_guessed(client):
+    body = client.get(BLANK_BENCHMARK.replace("&cohort=graduate", ""),
+                      headers=AUTH).get_data(as_text=True)
+    assert "Choose Graduate or Undergraduate" in body
+    assert "Conviction breakpoints" not in body
+
+
+def test_the_page_shows_the_cohorts_vote_counts(client):
+    grad = client.get(BLANK_BENCHMARK, headers=AUTH).get_data(as_text=True)
+    under = client.get(BLANK_BENCHMARK.replace("cohort=graduate", "cohort=undergraduate"),
+                       headers=AUTH).get_data(as_text=True)
+    assert ">6<" in grad and ">10<" in grad and ">13<" in grad
+    assert ">8<" in under and ">12<" in under and ">16<" in under
+    assert "graduate thresholds" in grad
+    assert "undergraduate thresholds" in under
+
+
+def test_manual_mode_also_needs_a_cohort(client):
+    body = client.get(
+        "/?manual=1&vol_security=40&vol_benchmark=14&corr=0.3&lookback=126"
+        "&portfolio_weight=0&benchmark_weight=0&incremental_weight=0&fund_value=1000000",
+        headers=AUTH,
+    ).get_data(as_text=True)
+    assert "Choose Graduate or Undergraduate" in body
 

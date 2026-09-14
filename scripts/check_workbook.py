@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Prove that sizer.py and the Longhorn Sizer tab still agree.
 
-    python scripts/check_workbook.py path/to/TMIA_Position_Sizing_Calculator_v7.xlsx
+    python scripts/check_workbook.py path/to/TMIA_Position_Sizing_Calculator_v8.xlsx
 
 The workbook is the other half of this tool and it does not live in this repo.
 A rule change in one that is not mirrored in the other means two tools give
@@ -23,8 +23,13 @@ Four checks, in order:
    takes the transcription below out of the loop entirely. A workbook saved
    without cached values skips this step and says so.
 4. Every output cell, swept over positions, trades and volatility regimes,
-   against the transcription. This covers the cases the saved workbook does not
-   sit on, close-outs and the mandate cap in particular.
+   against the transcription, for both cohorts. This covers the cases the saved
+   workbook does not sit on, close-outs and the mandate cap in particular.
+
+Vote counts differ by cohort and the workbook follows its own C10 cell, so the
+sweep runs both. Step 3 compares the vote cell only when C10 names a cohort; a
+workbook saved with C10 blank shows "pick a cohort" there, which is correct and
+has no equivalent in sizer.py to compare against.
 
 Needs openpyxl, which is in requirements.txt because the app reads State
 Street's holdings file with it. The deployed app never reads the workbook.
@@ -67,7 +72,10 @@ EXPECTED_FORMULAS = {
     "C44": "=ABS(C43)*C16*10000",
     "C45": "=C44-C23",
     "C46": '=IF(C41=0,"No trade",IF(C41<0,IF(ABS(C45)<=15,"Reduction, low magnitude",IF(ABS(C45)<=30,"Reduction, medium magnitude","Reduction, high magnitude")),IF(C44<=15,"Low",IF(C44<=30,"Medium",IF(C44<=60,"High","EXCEEDS HIGH")))))',
-    "C47": '=IF(C41=0,"",IF(C41<0,IF(ABS(C45)<=15,4,IF(ABS(C45)<=30,8,12)),IF(C44<=15,4,IF(C44<=30,8,IF(C44<=60,12,"not permitted")))))',
+    "C32": '=IF($C$10="Undergraduate",8,IF($C$10="Graduate",6,"pick a cohort"))',
+    "D32": '=IF($C$10="Undergraduate",12,IF($C$10="Graduate",10,"pick a cohort"))',
+    "E32": '=IF($C$10="Undergraduate",16,IF($C$10="Graduate",13,"pick a cohort"))',
+    "C47": '=IF(C41=0,"",IF(C41<0,IF(ABS(C45)<=15,$C$32,IF(ABS(C45)<=30,$D$32,$E$32)),IF(C44<=15,$C$32,IF(C44<=30,$D$32,IF(C44<=60,$E$32,"not permitted")))))',
     "C48": '=IF(ABS(C43)*10000<=300,"OK","OVER THE 3.00% CAP")',
     "C54": "=C41*C52",
     "C55": '=IF(C53>0,ROUND(C54/C53,0),"")',
@@ -77,6 +85,13 @@ EXPECTED_FORMULAS = {
 
 # Tier ceilings, C30:E30. Literal values in the workbook, not formulas.
 EXPECTED_CEILINGS = {"C30": 15, "D30": 30, "E30": 60}
+
+# YES votes by cohort, transcribed from the C32:E32 formulas above rather than
+# imported from sizer.py, so agreement between the two means something.
+COHORT_SCALES = {
+    "graduate": (6, 10, 13),
+    "undergraduate": (8, 12, 16),
+}
 
 # Constants pinned in tests/test_sizer.py, which claim to come from this workbook.
 PINNED = {
@@ -94,7 +109,7 @@ def xl_round(x: float) -> int:
 
 
 def workbook_cells(avol, portfolio_w, benchmark_w, incremental_w, fund, price,
-                   ceilings=(15.0, 30.0, 60.0)):
+                   ceilings=(15.0, 30.0, 60.0), vote_scale=(6, 10, 13)):
     """The Longhorn Sizer tab evaluated in Python.
 
     Transcribed from the Excel text in EXPECTED_FORMULAS and deliberately not
@@ -139,13 +154,15 @@ def workbook_cells(avol, portfolio_w, benchmark_w, incremental_w, fund, price,
         required = ("Reduction, low magnitude" if magnitude <= 15 else
                     "Reduction, medium magnitude" if magnitude <= 30 else
                     "Reduction, high magnitude")
-        votes = 4 if magnitude <= 15 else (8 if magnitude <= 30 else 12)
+        votes = (vote_scale[0] if magnitude <= 15 else
+                 vote_scale[1] if magnitude <= 30 else vote_scale[2])
     else:
         required = ("Low" if new_risk <= 15 else
                     "Medium" if new_risk <= 30 else
                     "High" if new_risk <= 60 else "EXCEEDS HIGH")
-        votes = (4 if new_risk <= 15 else 8 if new_risk <= 30 else
-                 12 if new_risk <= 60 else "not permitted")
+        votes = (vote_scale[0] if new_risk <= 15 else
+                 vote_scale[1] if new_risk <= 30 else
+                 vote_scale[2] if new_risk <= 60 else "not permitted")
 
     cap = "OK" if abs(new_active) * 10000 <= 300 else "OVER THE 3.00% CAP"   # C48
 
@@ -171,7 +188,7 @@ def page_tier_label(result):
     return "ABOVE HIGH" if result.current_risk_bps > 0 else "None, no active position"
 
 
-def compare_cached(ws) -> int:
+def compare_cached(ws, cohort) -> int:
     """Compare Excel's own results against sizer.py, for the saved inputs.
 
     No transcription involved: these are the numbers Excel computed. Returns the
@@ -179,6 +196,7 @@ def compare_cached(ws) -> int:
     """
     val = lambda ref: ws[ref].value
     result = sizer.size_from_risk(
+        cohort=cohort or "graduate",
         vol_security=val("C12"), vol_benchmark=val("C13"), corr=val("C14"),
         beta_=val("C15"), observations=val("C8"),
         current_portfolio_weight=val("C20"), benchmark_weight=val("C21"),
@@ -219,6 +237,10 @@ def compare_cached(ws) -> int:
         ("C56 target value", val("C56"), result.target_value),
         ("C57 target shares", val("C57"), result.target_shares),
     ]
+
+    if cohort is None:
+        # C10 is blank, so C47 reads "pick a cohort" and there is nothing to compare.
+        pairs = [pair for pair in pairs if not pair[0].startswith("C47")]
 
     print(f"   saved case: portfolio {val('C20'):.4%}, benchmark {val('C21'):.4%}, "
           f"proposing {val('C41'):+.4%}, fund ${val('C52'):,.0f}, last ${val('C53'):,.2f}")
@@ -279,7 +301,8 @@ def build_cases(regimes):
         b = random.choice([0.0, random.uniform(0, 0.03)])
         a = random.uniform(0, 0.06)
         cases.append((a, b, random.uniform(-a, 0.04), risk, name))
-    return cases
+    # Every case is run for every cohort: the ceilings are shared, the votes are not.
+    return [case + (cohort,) for case in cases for cohort in COHORT_SCALES]
 
 
 def main(path: str) -> int:
@@ -338,7 +361,14 @@ def main(path: str) -> int:
         print("   recalculated since it was last written. Open it, recalculate and save")
         print("   to enable this check.")
     else:
-        failures += compare_cached(cached)
+        cohort_cell = str(cached["C10"].value or "").strip().lower()
+        cohort = cohort_cell if cohort_cell in COHORT_SCALES else None
+        if cohort is None:
+            print(f"   cohort cell C10 is {cached['C10'].value!r}, so the vote cell "
+                  "was not compared. Pick a cohort in Excel and save to include it.")
+        else:
+            print(f"   cohort cell C10 says {cohort}")
+        failures += compare_cached(cached, cohort)
 
     print("4. every output cell, swept against the transcription")
     regimes = [
@@ -352,11 +382,13 @@ def main(path: str) -> int:
     cases = build_cases(regimes)
     mismatches = []
 
-    for portfolio_w, benchmark_w, incremental_w, risk, name in cases:
+    for portfolio_w, benchmark_w, incremental_w, risk, name, cohort in cases:
         vol_s, vol_b, corr, beta_ = risk
         avol = sizer.active_volatility(vol_s, vol_b, corr)
-        book = workbook_cells(avol, portfolio_w, benchmark_w, incremental_w, fund, price)
+        book = workbook_cells(avol, portfolio_w, benchmark_w, incremental_w, fund, price,
+                              vote_scale=COHORT_SCALES[cohort])
         result = sizer.size_from_risk(
+            cohort=cohort,
             vol_security=vol_s, vol_benchmark=vol_b, corr=corr, beta_=beta_,
             observations=lookback, current_portfolio_weight=portfolio_w,
             benchmark_weight=benchmark_w, incremental_weight=incremental_w,
@@ -367,7 +399,8 @@ def main(path: str) -> int:
                     if isinstance(left, float) and isinstance(right, float)
                     else left == right)
             if not same:
-                mismatches.append((name, label, (portfolio_w, benchmark_w, incremental_w),
+                mismatches.append((name, f"{cohort}, {label}",
+                                   (portfolio_w, benchmark_w, incremental_w),
                                    left, right))
 
         eq("C22 active weight", book["C22"], result.current_active_weight)
@@ -425,7 +458,8 @@ def main(path: str) -> int:
     if failures:
         print(f"DISAGREE. {failures} problem(s). The app and the workbook do not match.")
         return 1
-    print(f"AGREE. {len(cases):,} cases, 26 cells each, {len(cases) * 26:,} comparisons.")
+    print(f"AGREE. {len(cases):,} cases across both cohorts, 26 cells each, "
+          f"{len(cases) * 26:,} comparisons.")
     return 0
 
 

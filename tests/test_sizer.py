@@ -29,10 +29,12 @@ BETA = 0.8867425362286215
 
 FUND = 14_000_000.0
 PRICE = 35.66
+COHORT = "graduate"        # the workbook case is the MBA fund
 
 
-def run(port_w, bench_w, incr):
+def run(port_w, bench_w, incr, cohort=COHORT):
     return sizer.size_from_risk(
+        cohort=cohort,
         vol_security=VOL_S,
         vol_benchmark=VOL_B,
         corr=CORR,
@@ -105,7 +107,7 @@ def test_base_case_proposal():
     close(r.new_risk_bps, 28.811180, tol=1e-5)
     close(r.delta_risk_bps, 13.719610, tol=1e-5)
     assert r.required_tier == "Medium"
-    assert r.required_votes == 8
+    assert r.required_votes == 10          # graduate scale, 13 September 2026
     assert r.is_reduction is False
     assert r.within_cap is True
 
@@ -136,7 +138,7 @@ def test_underweight_ladder_floors_at_close_out():
     assert r.ladder[1].capped_by == "close-out"
     assert [g.trade_shares for g in r.ladder] == [283, -393, -393]
     assert r.is_reduction is True
-    assert r.required_votes == 4
+    assert r.required_votes == 6
 
 
 def test_name_not_held_ladder_is_the_full_ceiling():
@@ -147,7 +149,7 @@ def test_name_not_held_ladder_is_the_full_ceiling():
     assert [g.trade_shares for g in r.ladder] == [1288, 2575, 5151]
     close(r.new_risk_bps, 22.866016, tol=1e-5)
     assert r.required_tier == "Medium"
-    assert r.required_votes == 8
+    assert r.required_votes == 10
 
 
 def test_position_above_high_shows_trims_on_every_rung():
@@ -159,7 +161,7 @@ def test_position_above_high_shows_trims_on_every_rung():
     assert [g.trade_shares for g in r.ladder] == [-6564, -5277, -2701]
     close(r.delta_risk_bps, -68.598049, tol=1e-5)
     assert r.is_reduction is True
-    assert r.required_votes == 12
+    assert r.required_votes == 13
 
 
 def test_proposal_over_the_single_stock_cap():
@@ -173,6 +175,7 @@ def test_proposal_over_the_single_stock_cap():
 def test_mandate_cap_binds_on_a_low_volatility_name():
     """A 5% active vol name would need more than 300 bps to reach High."""
     r = sizer.size_from_risk(
+        cohort=COHORT,
         vol_security=0.05, vol_benchmark=0.05, corr=0.99, beta_=1.0,
         observations=126, current_portfolio_weight=0.0, benchmark_weight=0.0,
         incremental_weight=0.0, portfolio_value=FUND, last_price=PRICE,
@@ -199,3 +202,49 @@ def test_excel_round_is_half_away_from_zero():
     assert sizer.excel_round(1.5) == 2      # Python's round() gives 2
     assert sizer.excel_round(2.5) == 3      # Python's round() gives 2
     assert sizer.excel_round(-2.5) == -3
+
+
+# --------------------------------------------------------------------------
+# Vote thresholds by cohort, set 13 September 2026
+# --------------------------------------------------------------------------
+
+def test_the_ladder_carries_its_cohorts_vote_counts():
+    assert [g.votes for g in run(0.0033, 0.0, 0.0, "graduate").ladder] == [6, 10, 13]
+    assert [g.votes for g in run(0.0033, 0.0, 0.0, "undergraduate").ladder] == [8, 12, 16]
+
+
+def test_the_same_add_needs_more_yes_votes_from_undergraduates():
+    """Same trade, same tier, same risk. Only the count of the room differs."""
+    grad = run(0.0033, 0.0, 0.003, "graduate")
+    under = run(0.0033, 0.0, 0.003, "undergraduate")
+    assert grad.required_tier == under.required_tier == "Medium"
+    assert (grad.new_risk_bps, grad.required_votes) == (under.new_risk_bps, 10)
+    assert under.required_votes == 12
+
+
+def test_reductions_use_the_cohort_scale_too():
+    grad = run(0.02, 0.0, -0.015, "graduate")
+    under = run(0.02, 0.0, -0.015, "undergraduate")
+    assert grad.is_reduction is under.is_reduction is True
+    assert (grad.required_votes, under.required_votes) == (13, 16)
+
+
+def test_the_ceilings_and_the_cap_do_not_move_with_the_cohort():
+    grad = run(0.0033, 0.0, 0.003, "graduate")
+    under = run(0.0033, 0.0, 0.003, "undergraduate")
+    assert [g.ceiling_bps for g in grad.ladder] == [15.0, 30.0, 60.0]
+    assert ([g.ceiling_active_weight for g in grad.ladder]
+            == [g.ceiling_active_weight for g in under.ladder])
+    assert grad.within_cap is under.within_cap
+
+
+@pytest.mark.parametrize("typed", ["Graduate", " GRADUATE ", "undergraduate"])
+def test_a_cohort_is_read_however_it_is_capitalised(typed):
+    assert run(0.0033, 0.0, 0.003, typed).cohort == typed.strip().lower()
+
+
+@pytest.mark.parametrize("typed", ["", None, "faculty", "grad", "mba"])
+def test_anything_else_is_refused_rather_than_guessed(typed):
+    with pytest.raises(ValueError):
+        run(0.0033, 0.0, 0.003, typed)
+

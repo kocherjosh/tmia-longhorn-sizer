@@ -44,6 +44,7 @@ DEFAULTS = {
     "portfolio_weight": "0",
     "benchmark_weight": "",            # blank means look it up
     "benchmark_for": "",               # the ticker a filled in weight belongs to
+    "cohort": "",                      # graduate or undergraduate, never assumed
     "incremental_weight": "0",
     # `or`, not a get() default: Render can hand over an empty string.
     "fund_value": os.environ.get("SIZER_DEFAULT_FUND_VALUE") or DEFAULT_FUND_VALUE,
@@ -118,6 +119,17 @@ def _percent(raw: str, name: str, *, required: bool = True) -> float:
 # --------------------------------------------------------------------------
 # Routes
 # --------------------------------------------------------------------------
+
+def _cohort(raw: str) -> str:
+    """The cohort key, or a readable refusal. There is no default on purpose."""
+    try:
+        return sizer.normalise_cohort(raw)
+    except ValueError:
+        raise InputError(
+            "Choose Graduate or Undergraduate. The vote thresholds differ: 6, 10 "
+            "and 13 YES for graduates, 8, 12 and 16 for undergraduates."
+        ) from None
+
 
 def _box_percent(weight: float) -> str:
     """A decimal weight as a student would type it: 0.0808 becomes 8.08."""
@@ -229,6 +241,7 @@ def index():
                     "prices come from the feed."
                 )
             result = sizer.size_from_risk(
+                cohort=_cohort(form["cohort"]),
                 vol_security=vol_s, vol_benchmark=vol_b, corr=corr,
                 beta_=corr * vol_s / vol_b if vol_b else 0.0,
                 observations=lookback,
@@ -239,6 +252,8 @@ def index():
                 last_price=price,
             )
         else:
+            # Before any network call, so an unfinished form fails fast.
+            cohort = _cohort(form["cohort"])
             benchmark_weight, bench = _resolve_benchmark(
                 form["ticker"], benchmark_weight, form["benchmark_for"])
             # Show the weight in the box, tagged with the name it belongs to.
@@ -251,6 +266,7 @@ def index():
             sec, ben = prices.window(series, lookback)
             feed = series
             result = sizer.size(
+                cohort=cohort,
                 security_returns=sec, benchmark_returns=ben,
                 current_portfolio_weight=portfolio_weight,
                 benchmark_weight=benchmark_weight,
