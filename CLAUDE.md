@@ -66,6 +66,12 @@ weight, which for NVDA to anything else is an 8% error nobody would notice.
 **The app refuses to run without a password.** No `SIZER_PASSWORD` returns 503.
 Do not add a development default that could ship.
 
+The live password lives in one place only, the Render dashboard under
+Environment as `SIZER_PASSWORD`, and can be revealed there at any time. Never
+commit it, and never write it into a file in this repo: the repository is
+public. If asked to store credentials here, say so and stop. The username,
+`longhorn` in `render.yaml`, is not a secret.
+
 **`sizer.py` imports nothing but `math` and `dataclasses`.** No Flask, no
 yfinance, no pandas. It is the auditable statement of the rules and is meant to
 be reusable in a notebook, a grader, or a future Endowment sizer. Keep the

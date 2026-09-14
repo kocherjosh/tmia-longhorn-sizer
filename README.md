@@ -67,6 +67,19 @@ Environment → Add Environment Variable:
 | `SIZER_BENCHMARK` | `SPY` | Optional. |
 | `SIZER_DEFAULT_FUND_VALUE` | leave unset | Unset means the round $1,000,000 starting value in `app.py`. Never set it to the fund's actual value; see the posture note above. |
 
+**Where the password lives, and why it is not in here.** This repository is
+public, so anything committed to it is readable by anyone. The class password
+therefore lives in exactly one place: the Render dashboard, under **Environment**
+as `SIZER_PASSWORD`, where the value can be revealed whenever you need it. To
+change it, edit that field and save. Render redeploys and the new password takes
+effect in a few minutes, and no code changes. Change it between class sessions
+rather than during one, since anyone already signed in keeps working until their
+browser drops the old credentials.
+
+The username is not a secret. It is `longhorn`, set in `render.yaml`, and it is
+the same for everyone. If a sign-in fails, that is the half that is usually
+right and the password that is wrong.
+
 **4. Stay on the Starter plan, not Free.** A free instance spins down after 15
 minutes of no traffic and takes about a minute to wake. A student opening it on a
 Thursday night will think it is broken. Starter is currently $7 a month and
@@ -91,6 +104,16 @@ python -m pytest tests/ -q              # 99 tests
 python scripts/check_feed.py NVDA       # live Yahoo check
 python scripts/check_workbook.py W.xlsx # prove the app and the workbook agree
 ```
+
+Those are bash lines. On Windows `cmd`, set the variable first and then run:
+
+```cmd
+set SIZER_PASSWORD=demo
+python app.py
+```
+
+That password is a throwaway for your own machine. It has nothing to do with the
+class password and must never be used on the deployed site.
 
 ---
 
