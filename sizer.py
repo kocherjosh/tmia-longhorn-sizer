@@ -361,9 +361,20 @@ def size_from_risk(
     current_active = current_portfolio_weight - benchmark_weight
     current_risk = _risk_bps(current_active, avol)
 
-    # The ladder runs in the direction of the current position. A benchmark name
-    # held at zero is an underweight, so the ladder runs short of the benchmark.
+    # The ladder runs in the direction of the current position, so a benchmark
+    # name held at zero reads as an underweight and the ladder runs short.
     direction = -1 if current_active < 0 else 1
+
+    # Except that the short side runs out at a full close-out. For a name that is
+    # a small part of the benchmark, there is not enough of it to be underweight
+    # in: every rung lands on the close-out and the ladder reads zero across the
+    # board, exactly when a student is asking how much they may buy. If a full
+    # close-out cannot reach even the Low ceiling, the ladder runs long instead,
+    # which is the only direction the fund can move in anyway.
+    if direction < 0 and avol > 0:
+        low_ceiling_weight = min(TIERS[0][1] / avol, MAX_ACTIVE_WEIGHT_BPS) / 10_000.0
+        if low_ceiling_weight > benchmark_weight:
+            direction = 1
 
     ladder: list[Rung] = []
     for (name, ceiling_bps, boxes), votes in zip(TIERS, COHORTS[cohort]):

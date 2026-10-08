@@ -248,3 +248,57 @@ def test_anything_else_is_refused_rather_than_guessed(typed):
     with pytest.raises(ValueError):
         run(0.0033, 0.0, 0.003, typed)
 
+
+# --------------------------------------------------------------------------
+# The ladder points at the side with room, 6 October 2026
+# --------------------------------------------------------------------------
+
+def _expe(incremental=0.005):
+    """EXPE as a student met it: 0.0446% of SPY, none held, proposing +0.50%."""
+    return sizer.size_from_risk(
+        cohort="undergraduate", vol_security=0.452, vol_benchmark=0.125, corr=0.17,
+        beta_=0.60, observations=126, current_portfolio_weight=0.0,
+        benchmark_weight=0.000446, incremental_weight=incremental,
+        portfolio_value=919_000, last_price=256.39,
+    )
+
+
+def test_a_small_benchmark_name_sizes_long_rather_than_reading_zero():
+    """The reported bug: every rung said 0.00%, $0, 0 shares."""
+    r = _expe()
+    assert [g.trade_shares for g in r.ladder] == [14, 26, 50]
+    assert all(g.trade_weight > 0 for g in r.ladder)
+    assert all(g.capped_by is None for g in r.ladder)
+
+
+def test_the_small_name_ladder_reaches_its_ceilings_exactly():
+    r = _expe()
+    for rung in r.ladder:
+        risk = abs(rung.ceiling_active_weight) * r.active_vol * 10_000
+        close(risk, rung.ceiling_bps, tol=1e-9)
+
+
+def test_it_does_not_depend_on_a_trade_having_been_typed():
+    """A student reading the ladder before proposing anything gets the same answer."""
+    assert ([g.trade_weight for g in _expe(0.0).ladder]
+            == [g.trade_weight for g in _expe().ladder])
+
+
+def test_a_large_benchmark_name_still_runs_short():
+    """NVDA at 8.22%: a close-out clears the Low ceiling, so the short side stands."""
+    r = sizer.size_from_risk(
+        cohort="graduate", vol_security=0.401, vol_benchmark=0.139, corr=0.65,
+        beta_=1.89, observations=126, current_portfolio_weight=0.0,
+        benchmark_weight=0.0822, incremental_weight=0.0,
+        portfolio_value=1_000_000, last_price=218.36,
+    )
+    assert all(g.ceiling_active_weight < 0 for g in r.ladder)
+    assert all(g.trade_weight > 0 for g in r.ladder)      # buy toward the benchmark
+
+
+def test_the_close_out_floor_still_binds_where_the_name_is_big_enough():
+    """0.50% benchmark name, 0.10% held: unchanged, Medium and High share a rung."""
+    r = run(0.001, 0.005, -0.001)
+    close(r.ladder[1].ceiling_active_weight, -0.005, tol=1e-9)
+    assert r.ladder[1].capped_by == "close-out"
+

@@ -100,7 +100,7 @@ If that fails on Render but works locally, the problem is egress, not the code.
 ```bash
 pip install -r requirements.txt
 SIZER_PASSWORD=demo python app.py       # http://127.0.0.1:5000
-python -m pytest tests/ -q              # 99 tests
+python -m pytest tests/ -q              # 104 tests
 python scripts/check_feed.py NVDA       # live Yahoo check
 python scripts/check_workbook.py W.xlsx # prove the app and the workbook agree
 ```
@@ -236,6 +236,16 @@ name held at zero reads as an underweight. Ceilings are capped by the 300 bps
 single-stock active weight limit and, on the underweight side, by a full
 close-out; where a cap binds, two tiers can show the same number and the page
 says so.
+
+**The ladder points at the side with room.** The short side runs out at a full
+close-out, and for a name that is a small part of the benchmark there is not
+enough of it to be underweight in. EXPE at 0.0446% of the S&P, with none held,
+used to put every rung on the close-out the fund was already sitting on, so the
+row answering "how much do I ask for" read 0.00%, $0 and 0 shares at all three
+tiers. When a full close-out cannot reach even the Low ceiling, the ladder now
+runs long instead, which is the only direction a long only fund can move in
+anyway. Large benchmark names are untouched: NVDA at 8.22% still ladders on the
+underweight side, because closing out clears Low comfortably.
 
 ### Rulings
 

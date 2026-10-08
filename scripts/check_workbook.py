@@ -60,9 +60,9 @@ EXPECTED_FORMULAS = {
     "C23": "=ABS(C22)*C16*10000",
     "C24": '=IF(C23=0,"None, no active position",IF(C23<=15,"Low",IF(C23<=30,"Medium",IF(C23<=60,"High","ABOVE HIGH"))))',
     "C25": "=IF(C23<=15,15-C23,IF(C23<=30,30-C23,IF(C23<=60,60-C23,0)))",
-    "C33": "=IF($C$16<=0,0,IF($C$22<0,MAX(-MIN(300,C30/$C$16)/10000,-$C$21),MIN(300,C30/$C$16)/10000))",
-    "D33": "=IF($C$16<=0,0,IF($C$22<0,MAX(-MIN(300,D30/$C$16)/10000,-$C$21),MIN(300,D30/$C$16)/10000))",
-    "E33": "=IF($C$16<=0,0,IF($C$22<0,MAX(-MIN(300,E30/$C$16)/10000,-$C$21),MIN(300,E30/$C$16)/10000))",
+    "C33": "=IF($C$16<=0,0,IF(AND($C$22<0,MIN(300,$C$30/$C$16)/10000<=$C$21),MAX(-MIN(300,C30/$C$16)/10000,-$C$21),MIN(300,C30/$C$16)/10000))",
+    "D33": "=IF($C$16<=0,0,IF(AND($C$22<0,MIN(300,$C$30/$C$16)/10000<=$C$21),MAX(-MIN(300,D30/$C$16)/10000,-$C$21),MIN(300,D30/$C$16)/10000))",
+    "E33": "=IF($C$16<=0,0,IF(AND($C$22<0,MIN(300,$C$30/$C$16)/10000<=$C$21),MAX(-MIN(300,E30/$C$16)/10000,-$C$21),MIN(300,E30/$C$16)/10000))",
     "C34": "=C33+$C$21",
     "C35": "=C33-$C$22",
     "C36": "=C35*$C$52",
@@ -129,11 +129,18 @@ def workbook_cells(avol, portfolio_w, benchmark_w, incremental_w, fund, price,
             30 - risk if risk <= 30 else
             60 - risk if risk <= 60 else 0)
 
+    # The short side is only used when a full close-out can reach the Low
+    # ceiling. Otherwise there is not enough of the name in the benchmark to be
+    # underweight in, and the ladder runs long.
+    short_side = False
+    if avol > 0 and active < 0:
+        short_side = min(300.0, ceilings[0] / avol) / 10000 <= benchmark_w
+
     ladder = []                                              # C33:E37
     for ceiling in ceilings:
         if avol <= 0:
             weight = 0.0
-        elif active < 0:
+        elif short_side:
             weight = max(-min(300.0, ceiling / avol) / 10000, -benchmark_w)
         else:
             weight = min(300.0, ceiling / avol) / 10000

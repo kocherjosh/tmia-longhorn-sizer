@@ -8,13 +8,13 @@ waiting on a human decision.
 ## State of the repo
 
 **The app is complete and working.** It is not a spec to implement. Several commits
-on `main`, 99 passing tests, verified against the source workbook. Do not
+on `main`, 104 passing tests, verified against the source workbook. Do not
 rebuild it. If asked to "build the sizer," the honest answer is that it is built
 and the work is deployment, verification, or a specific change.
 
 ```bash
 pip install -r requirements.txt
-python -m pytest tests/ -q                 # 99 tests, all should pass, ~2s
+python -m pytest tests/ -q                 # 104 tests, all should pass, ~2s
 SIZER_PASSWORD=demo python app.py          # http://127.0.0.1:5000
 python scripts/check_feed.py NVDA          # live Yahoo check
 ```
@@ -179,6 +179,9 @@ only, so the largest possible underweight is a full close-out. A 0.50% benchmark
 name floors Medium and High at the same active weight of &minus;0.50%. The page
 says so in a footnote. `Rung.capped_by == "close-out"` marks it.
 
+This only happens where the name is big enough in the benchmark for the short
+side to be used at all. See the ladder direction ruling below.
+
 **`(0.00%)` sitting above `($280)`.** A trim of 0.002% rounds to zero at two
 decimals but is a real sale of 8 shares. `signed_pct` deliberately keeps the sign
 when the magnitude rounds to zero, because students read the three rows together.
@@ -253,6 +256,17 @@ holding any name above 3% of SPY is outside it. `MAX_ACTIVE_WEIGHT_BPS` stays
 flat. The canon's account table reads "±3% active weight, look-through", which
 matches; its constraint stack says "±3% of benchmark weight", which is the
 phrasing that made this look open.
+
+**The ladder points at the side with room, 6 October 2026.** Reported from the
+live site: EXPE, 0.0446% of the S&P and not held, showed 0.00%, $0 and 0 shares
+on every rung. The ladder ran short because the position was technically a 0.04%
+underweight, but a long only fund holding none of it is already at its floor, so
+every rung landed where the position already sat. The rule now is that if a full
+close-out cannot reach even the Low ceiling, the ladder runs long. One condition
+in `size_from_risk()`, mirrored in the workbook's `C33:E33`, which gained an
+`AND($C$22<0, MIN(300,$C$30/$C$16)/10000<=$C$21)` test. Large names are
+unaffected: NVDA at 8.22% still ladders short. This was the workbook's rule too,
+so it was a design flaw in both tools rather than a porting error.
 
 **Vote thresholds differ by cohort, 13 September 2026.** Graduate 6, 10, 13 and
 undergraduate 8, 12, 16, for reductions as well as adds. `COHORTS` in `sizer.py`,
